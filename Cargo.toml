@@ -6,6 +6,7 @@ authors = ["TZANiX Core Team"]
 
 [dependencies]
 memmap2 = { version = "0.9", optional = true }
+rand = "0.8"
 
 [features]
 default = ["std"]
@@ -13,7 +14,6 @@ std = ["dep:memmap2"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
 
 [[bench]]
 name = "entropy_benchmark"

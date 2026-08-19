@@ -135,4 +135,71 @@ fn main() {
         std::println!("  Volatility    : {:.4}", event.metric_volatility);
         std::println!("  Action        : {} ({})", event.action_type, if event.action_type == 1 { "PERMITIDO" } else { "VETO" });
     }
+
+    // --- PRUEBA DE SUMO ESTRÉS DE ALTO RENDIMIENTO (10 millones de iteraciones) ---
+    std::println!("\n--- Iniciando Prueba de Sumo Estrés (10 Millones de Muestras) ---");
+    use std::time::Instant;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use rand::Rng;
+
+    // Usar un generador de números pseudoaleatorios rápido y predecible con semilla estable
+    let mut rng = StdRng::seed_from_u64(42);
+    let mut pipeline_stress = UniversalProductionPipeline {
+        prev_entropy: 0.0,
+        risk_multiplier: 1.5,
+        processing_latency_sec: 1e-6,
+    };
+
+    let mut telemetry_queue_stress = SpscTelemetryBuffer::new();
+
+    let iterations = 10_000_000;
+    let mut checksum = 0u64; // Evitar Dead Code Elimination (DCE)
+
+    let start = Instant::now();
+
+    for i in 0..iterations {
+        // Generar un snapshot aleatorio rápido en cada paso
+        let mut snapshot = DenseSignalSnapshot {
+            channel_alpha: [0; 8],
+            channel_beta: [0; 8],
+        };
+        for j in 0..8 {
+            snapshot.channel_alpha[j] = rng.gen_range(10..2000);
+            snapshot.channel_beta[j] = rng.gen_range(10..2000);
+        }
+
+        let dt = 10.0 + (i % 100) as f64; // Tiempo dinámico para simular volatilidad
+
+        // Ejecutar el lazo crítico
+        let result = pipeline_stress.run_signal_pass(
+            &snapshot,
+            dt,
+            &mut telemetry_queue_stress,
+            i as u32,
+            snapshot.channel_alpha[0],
+        );
+
+        if result {
+            checksum += 1;
+        }
+
+        // Simular que el consumidor drena el buffer periódicamente
+        if i % 10 == 0 {
+            let head = telemetry_queue_stress.head.load(core::sync::atomic::Ordering::Relaxed);
+            telemetry_queue_stress.tail.store(head, core::sync::atomic::Ordering::Release);
+        }
+    }
+
+    let elapsed = start.elapsed();
+    let total_nanos = elapsed.as_nanos() as f64;
+    let avg_latency = total_nanos / iterations as f64;
+    let mops = (iterations as f64 / elapsed.as_secs_f64()) / 1_000_000.0;
+
+    std::println!("Resultados del Silicio Real:");
+    std::println!("  Tiempo Transcurrido : {:?}", elapsed);
+    std::println!("  Total Muestras      : {}", iterations);
+    std::println!("  Latencia Promedio   : {:.2} ns / muestra", avg_latency);
+    std::println!("  Rendimiento (Mops)  : {:.2} Mops/seg", mops);
+    std::println!("  Coherentes (Checks) : {} / {}", checksum, iterations);
 }
