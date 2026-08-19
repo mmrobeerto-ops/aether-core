@@ -34,6 +34,17 @@ pub struct SpscTelemetryBuffer {
 }
 
 impl SpscTelemetryBuffer {
+    /// Inicializa un nuevo Ring Buffer alineado
+    pub fn new() -> Self {
+        Self {
+            buffer: [UniversalEvent::default(); RING_CAPACITY],
+            head: AtomicUsize::new(0),
+            _pad_head: [0; 56],
+            tail: AtomicUsize::new(0),
+            _pad_tail: [0; 56],
+        }
+    }
+
     /// Inserción atómica ultra-rápida desde la ruta crítica (~1.1 ns)
     #[inline(always)]
     pub fn try_push(&mut self, event: UniversalEvent) -> bool {

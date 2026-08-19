@@ -75,6 +75,64 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[cfg(feature = "std")]
 fn main() {
-    // Punto de entrada cuando se compila con std
-    std::println!("TZANiX Production Pipeline compilado bajo standard library.");
+    use tzanix_aether_core::storage::SpscTelemetryBuffer;
+    use tzanix_aether_core::DenseSignalSnapshot;
+
+    // 1. Inicializar el buffer de telemetría y el pipeline de producción
+    let mut telemetry_queue = SpscTelemetryBuffer::new();
+
+    let mut pipeline = UniversalProductionPipeline {
+        prev_entropy: 0.0,
+        risk_multiplier: 1.5,
+        processing_latency_sec: 1e-6, // 1 microsegundo de latencia de red estimada
+    };
+
+    std::println!("--- Demostración de Ejecución del Motor TZANiX-Æther-Core ---");
+
+    // Escenario A: Señal Uniforme y Equilibrada (Caos máximo / Alta entropía)
+    let snapshot_uniform = DenseSignalSnapshot {
+        channel_alpha: [100, 100, 100, 100, 100, 100, 100, 100],
+        channel_beta: [100, 100, 100, 100, 100, 100, 100, 100],
+    };
+
+    // Escenario B: Señal Concentrada / Coherente (Bajo caos / Baja entropía)
+    let snapshot_coherent = DenseSignalSnapshot {
+        channel_alpha: [1600, 0, 0, 0, 0, 0, 0, 0],
+        channel_beta: [0; 8],
+    };
+
+    // Ejecutar pasos a través del pipeline
+    std::println!("\n[Paso 1] Evaluando Señal Uniforme (Máximo Caos / Alta Entropía):");
+    let result_a = pipeline.run_signal_pass(
+        &snapshot_uniform,
+        100.0, // dt = 100 nanosegundos
+        &mut telemetry_queue,
+        192168110, // ID de Entidad (e.g. IP 192.168.1.10)
+        1000,      // Valor de la señal
+    );
+    std::println!("  Resultado de Coherencia: {} (Veredicto: {})", result_a, if result_a { "PERMITIDO" } else { "VETO POR DECOHERENCIA" });
+
+    std::println!("\n[Paso 2] Evaluando Señal Coherente (Transición rápida a bajo caos):");
+    let result_b = pipeline.run_signal_pass(
+        &snapshot_coherent,
+        50.0, // dt = 50 nanosegundos (cambio muy rápido)
+        &mut telemetry_queue,
+        192168120, // IP 192.168.1.20
+        2500,
+    );
+    std::println!("  Resultado de Coherencia: {} (Veredicto: {})", result_b, if result_b { "PERMITIDO" } else { "VETO POR DECOHERENCIA" });
+
+    // Leer eventos del Ring Buffer de telemetría
+    std::println!("\n--- Registro de Eventos en el SPSC Ring Buffer ---");
+    let head = telemetry_queue.head.load(core::sync::atomic::Ordering::Relaxed);
+    for idx in 0..head {
+        let event = telemetry_queue.buffer[idx];
+        std::println!("Evento #{}:", idx + 1);
+        std::println!("  TSC Timestamp : {} ciclos", event.timestamp_ns);
+        std::println!("  Entity ID     : {}", event.entity_id);
+        std::println!("  Signal Value  : {}", event.signal_value);
+        std::println!("  Entropy       : {:.4}", event.metric_entropy);
+        std::println!("  Volatility    : {:.4}", event.metric_volatility);
+        std::println!("  Action        : {} ({})", event.action_type, if event.action_type == 1 { "PERMITIDO" } else { "VETO" });
+    }
 }
