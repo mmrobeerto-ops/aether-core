@@ -74,10 +74,11 @@ En `src/storage.rs`, los índices `head` y `tail` del búfer circular `SpscTelem
 Durante eventos legítimos de alta demanda (como un "Cyber Monday"), el volumen de paquetes por segundo (PPS) puede incrementarse 100 veces. Dado que el cálculo de entropía y volatilidad se realiza en la escala de nanosegundos, las fluctuaciones aleatorias en los tamaños de los paquetes individuales generarían picos transitorios de volatilidad en la derivada de entropía.
 * Para mitigar esto, implementamos un filtro **EMA con coeficiente de suavizado $\alpha = 0.02$**. Este filtro actúa como un **pasabajas matemático**, diluyendo el ruido de alta frecuencia de ráfagas legítimas mientras conserva la capacidad de reaccionar ante cambios persistentes.
 
-### 4. Mitigación Dinámica mediante Control Proporcional-Derivativo (PD)
-El lazo de control combina dos criterios de toma de decisiones:
-* **Criterio Derivativo (Volatilidad):** Evalúa la tasa de cambio rápido en la entropía de la señal. Ante una transición abrupta (comienzo del ataque), la volatilidad se dispara, activando una acción inmediata de **Rate Limiting Progresivo (Action 3)** para retener y auditar el tráfico de forma segura.
-* **Criterio Proporcional (Entropía Estática):** Evalúa el estado absoluto del caos. Si el ataque persiste y la entropía cae por debajo del umbral de seguridad estático ($< 1.5$), el motor conmuta de forma automática y permanente a un estado de **Blackhole/Veto (Action 2)**, mitigando la inundación de paquetes uniformes con tiempo de reacción inferior a **33 ns** desde el inicio de la anomalía.
+### 5. Python a la Velocidad del Silicio (Bypass del Intérprete vía PyO3)
+Python es conocido por su lentitud debido al overhead de su tipado dinámico en tiempo de ejecución, la sobrecarga del recolector de basura (Reference Counting) y el bloqueo global del intérprete (**GIL - Global Interpreter Lock**). Al exponer las funciones críticas de `AetherSignalEngine` mediante bindings nativos en Rust con **PyO3**:
+* **Bypass de la Capa Dinámica:** Las estructuras complejas de datos en Python se convierten directamente a tipos nativos y planos de Rust (`DenseSignalSnapshot`) mediante mapeo de memoria en C-FFI sin coste de traducción o clonaciones en el heap.
+* **Compilación a Código de Máquina Puro:** El lazo crítico corre a nivel de ensamblador optimizado por hardware (AVX2/AVX-512). Python no interpreta la matemática; simplemente delega la ejecución de la CPU al hilo compilado de Rust, retornando en nanosegundos.
+* **Liberación de Hilos del GIL:** Al invocar simulaciones de estrés masivas o procesamiento de buffers, liberamos el GIL en Rust mediante `py.allow_threads(...)`. Esto permite que el motor de entropía ejecute tareas concurrentes en paralelo en múltiples núcleos físicos de la CPU mientras la UI de Python (por ejemplo, a través de visualizadores de gráficos) procesa telemetría a 60 FPS sin congelamientos (*stalls*) en la interfaz.
 
 ---
 
