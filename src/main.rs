@@ -7,6 +7,10 @@ use core::panic::PanicInfo;
 use tzanix_aether_core::{AetherSignalEngine, DenseSignalSnapshot};
 use tzanix_aether_core::storage::{SpscTelemetryBuffer, UniversalEvent};
 
+#[cfg(feature = "std")]
+use rand::Rng;
+
+
 pub struct UniversalProductionPipeline {
     pub prev_entropy: f64,
     pub risk_multiplier: f64,
@@ -29,14 +33,20 @@ impl UniversalProductionPipeline {
         
         // 2. Derivada discreta instantánea del cambio de la señal
         let diff = (current_entropy - self.prev_entropy).abs();
-        let vol_rate = diff / (dt_nano + 1e-9);
+        let vol_rate = diff / (dt_nano * 1e-9 + 1e-15);
+        
+        let is_cold_start = self.prev_entropy == 0.0;
         self.prev_entropy = current_entropy;
 
         // 3. Resolución de veto libre de divisiones algebraicas (FMA)
-        let critical_threshold = self.processing_latency_sec 
-            * self.risk_multiplier 
-            * vol_rate 
-            * current_entropy;
+        let critical_threshold = if is_cold_start {
+            0.0
+        } else {
+            self.processing_latency_sec 
+                * self.risk_multiplier 
+                * vol_rate 
+                * current_entropy
+        };
 
         let is_signal_coherent = critical_threshold < 1.0;
         let action_flag = if is_signal_coherent { 1 } else { 2 };
@@ -77,114 +87,115 @@ fn panic(_info: &PanicInfo) -> ! {
 fn main() {
     use tzanix_aether_core::storage::SpscTelemetryBuffer;
     use tzanix_aether_core::DenseSignalSnapshot;
+    use std::time::Instant;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use rand::Rng;
 
     // 1. Inicializar el buffer de telemetría y el pipeline de producción
     let mut telemetry_queue = SpscTelemetryBuffer::new();
 
     let mut pipeline = UniversalProductionPipeline {
         prev_entropy: 0.0,
-        risk_multiplier: 1.5,
+        risk_multiplier: 2.0,
         processing_latency_sec: 1e-6, // 1 microsegundo de latencia de red estimada
     };
 
-    std::println!("--- Demostración de Ejecución del Motor TZANiX-Æther-Core ---");
+    std::println!("--- Simulación de Ciberseguridad: Filtro Anti-DDoS L3 ---");
 
-    // Escenario A: Señal Uniforme y Equilibrada (Caos máximo / Alta entropía)
-    let snapshot_uniform = DenseSignalSnapshot {
-        channel_alpha: [100, 100, 100, 100, 100, 100, 100, 100],
-        channel_beta: [100, 100, 100, 100, 100, 100, 100, 100],
+    // Escenario Normal: Tráfico equilibrado en 8 subredes (Alta entropía, permitido)
+    let snapshot_normal = DenseSignalSnapshot {
+        channel_alpha: [200, 300, 150, 400, 250, 350, 180, 220], // Paquetes por segundo (PPS)
+        channel_beta: [1500, 1200, 1500, 1000, 1500, 1300, 1500, 1400], // Tamaños de paquete (Bytes)
     };
 
-    // Escenario B: Señal Concentrada / Coherente (Bajo caos / Baja entropía)
-    let snapshot_coherent = DenseSignalSnapshot {
-        channel_alpha: [1600, 0, 0, 0, 0, 0, 0, 0],
-        channel_beta: [0; 8],
+    // Escenario DDoS: Ataque de inundación (Flooding) en subred 3 (Baja entropía, bloqueado)
+    let snapshot_ddos = DenseSignalSnapshot {
+        channel_alpha: [200, 300, 100000, 400, 250, 350, 180, 220], // Inundación masiva de PPS en subred 3
+        channel_beta: [1500, 1200, 64, 1000, 1500, 1300, 1500, 1400], // Paquetes minúsculos uniformes (SYN flood)
     };
 
-    // Ejecutar pasos a través del pipeline
-    std::println!("\n[Paso 1] Evaluando Señal Uniforme (Máximo Caos / Alta Entropía):");
-    let result_a = pipeline.run_signal_pass(
-        &snapshot_uniform,
-        100.0, // dt = 100 nanosegundos
-        &mut telemetry_queue,
-        192168110, // ID de Entidad (e.g. IP 192.168.1.10)
-        1000,      // Valor de la señal
-    );
-    std::println!("  Resultado de Coherencia: {} (Veredicto: {})", result_a, if result_a { "PERMITIDO" } else { "VETO POR DECOHERENCIA" });
+    // Paso 1: Tráfico Normal
+    std::println!("\n[Paso 1] Evaluando Tráfico de Red Normal (Entropía alta/Caos distribuido):");
+    let result_a = pipeline.run_signal_pass(&snapshot_normal, 100.0, &mut telemetry_queue, 10003, 1500);
+    std::println!("  Resultado de Coherencia: {} (Acción: {})", result_a, if result_a { "PERMITIR TRÁFICO" } else { "MITIGAR / BLOQUEAR IP" });
 
-    std::println!("\n[Paso 2] Evaluando Señal Coherente (Transición rápida a bajo caos):");
-    let result_b = pipeline.run_signal_pass(
-        &snapshot_coherent,
-        50.0, // dt = 50 nanosegundos (cambio muy rápido)
-        &mut telemetry_queue,
-        192168120, // IP 192.168.1.20
-        2500,
-    );
-    std::println!("  Resultado de Coherencia: {} (Veredicto: {})", result_b, if result_b { "PERMITIDO" } else { "VETO POR DECOHERENCIA" });
+    // Paso 2: Ataque DDoS
+    std::println!("\n[Paso 2] Evaluando Ataque DDoS SYN Flood en Subred 3:");
+    let result_b = pipeline.run_signal_pass(&snapshot_ddos, 50.0, &mut telemetry_queue, 10003, 64);
+    std::println!("  Resultado de Coherencia: {} (Acción: {})", result_b, if result_b { "PERMITIR TRÁFICO" } else { "MITIGAR / BLOQUEAR IP (DDoS detectado)" });
 
-    // Leer eventos del Ring Buffer de telemetría
-    std::println!("\n--- Registro de Eventos en el SPSC Ring Buffer ---");
+    // Leer el buffer
+    std::println!("\n--- Registro de Eventos de Ciberseguridad ---");
     let head = telemetry_queue.head.load(core::sync::atomic::Ordering::Relaxed);
     for idx in 0..head {
         let event = telemetry_queue.buffer[idx];
-        std::println!("Evento #{}:", idx + 1);
-        std::println!("  TSC Timestamp : {} ciclos", event.timestamp_ns);
-        std::println!("  Entity ID     : {}", event.entity_id);
-        std::println!("  Signal Value  : {}", event.signal_value);
-        std::println!("  Entropy       : {:.4}", event.metric_entropy);
-        std::println!("  Volatility    : {:.4}", event.metric_volatility);
-        std::println!("  Action        : {} ({})", event.action_type, if event.action_type == 1 { "PERMITIDO" } else { "VETO" });
+        std::println!("Alarma #{} en Red:", idx + 1);
+        std::println!("  Subred (Entity) : 10.0.0.{}", event.entity_id % 255);
+        std::println!("  Tamaño Paquete  : {} Bytes", event.signal_value);
+        std::println!("  Entropía L3     : {:.4}", event.metric_entropy);
+        std::println!("  Volatilidad     : {:.4}", event.metric_volatility);
+        std::println!("  Veredicto       : {} ({})", event.action_type, if event.action_type == 1 { "TRÁFICO COHERENTE" } else { "VETO / ANOMALÍA DETECTADA" });
     }
 
-    // --- PRUEBA DE SUMO ESTRÉS DE ALTO RENDIMIENTO (10 millones de iteraciones) ---
-    std::println!("\n--- Iniciando Prueba de Sumo Estrés (10 Millones de Muestras) ---");
-    use std::time::Instant;
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
-    use rand::Rng;
-
-    // Usar un generador de números pseudoaleatorios rápido y predecible con semilla estable
+    // --- PRUEBA DE SUMO ESTRÉS DE ALTO RENDIMIENTO CON SIMULACIÓN DE DDOS ---
+    std::println!("\n--- Iniciando Prueba de Sumo Estrés (10 Millones de Paquetes L3) ---");
     let mut rng = StdRng::seed_from_u64(42);
     let mut pipeline_stress = UniversalProductionPipeline {
         prev_entropy: 0.0,
-        risk_multiplier: 1.5,
+        risk_multiplier: 2.0,
         processing_latency_sec: 1e-6,
     };
 
     let mut telemetry_queue_stress = SpscTelemetryBuffer::new();
 
     let iterations = 10_000_000;
-    let mut checksum = 0u64; // Evitar Dead Code Elimination (DCE)
+    let mut allowed_packets = 0u64;
+    let mut blocked_packets = 0u64;
+    let mut ddos_detection_time: Option<Instant> = None;
 
     let start = Instant::now();
 
     for i in 0..iterations {
-        // Generar un snapshot aleatorio rápido en cada paso
+        // Simular que del paquete 0 al 5,000,000 el tráfico es normal
+        // Del paquete 5,000,000 en adelante, la subred 3 es atacada masivamente
+        let is_under_attack = i >= 5_000_000;
+
         let mut snapshot = DenseSignalSnapshot {
             channel_alpha: [0; 8],
             channel_beta: [0; 8],
         };
+
         for j in 0..8 {
-            snapshot.channel_alpha[j] = rng.gen_range(10..2000);
-            snapshot.channel_beta[j] = rng.gen_range(10..2000);
+            if is_under_attack && j == 2 {
+                // SYN Flood: Gran cantidad de paquetes pequeños
+                snapshot.channel_alpha[j] = rng.gen_range(80_000..120_000);
+                snapshot.channel_beta[j] = 64; // Paquetes pequeños uniformes
+            } else {
+                snapshot.channel_alpha[j] = rng.gen_range(50..500);
+                snapshot.channel_beta[j] = rng.gen_range(64..1500);
+            }
         }
 
-        let dt = 10.0 + (i % 100) as f64; // Tiempo dinámico para simular volatilidad
+        let dt = 10.0 + (i % 50) as f64; // dt dinámico
 
-        // Ejecutar el lazo crítico
-        let result = pipeline_stress.run_signal_pass(
+        let is_allowed = pipeline_stress.run_signal_pass(
             &snapshot,
             dt,
             &mut telemetry_queue_stress,
-            i as u32,
-            snapshot.channel_alpha[0],
+            10000 + (j_range_helper(&mut rng) % 250), // entity_id (IP)
+            snapshot.channel_beta[2], // packet size targeted
         );
 
-        if result {
-            checksum += 1;
+        if is_allowed {
+            allowed_packets += 1;
+        } else {
+            blocked_packets += 1;
+            if is_under_attack && ddos_detection_time.is_none() {
+                ddos_detection_time = Some(Instant::now());
+            }
         }
 
-        // Simular que el consumidor drena el buffer periódicamente
         if i % 10 == 0 {
             let head = telemetry_queue_stress.head.load(core::sync::atomic::Ordering::Relaxed);
             telemetry_queue_stress.tail.store(head, core::sync::atomic::Ordering::Release);
@@ -198,8 +209,18 @@ fn main() {
 
     std::println!("Resultados del Silicio Real:");
     std::println!("  Tiempo Transcurrido : {:?}", elapsed);
-    std::println!("  Total Muestras      : {}", iterations);
-    std::println!("  Latencia Promedio   : {:.2} ns / muestra", avg_latency);
+    std::println!("  Total Paquetes      : {}", iterations);
+    std::println!("  Latencia Promedio   : {:.2} ns / paquete", avg_latency);
     std::println!("  Rendimiento (Mops)  : {:.2} Mops/seg", mops);
-    std::println!("  Coherentes (Checks) : {} / {}", checksum, iterations);
+    std::println!("  Paquetes Permitidos : {}", allowed_packets);
+    std::println!("  Paquetes Bloqueados : {}", blocked_packets);
+    
+    if let Some(detection_start) = ddos_detection_time {
+        let detection_delay = detection_start.duration_since(start).as_nanos() as f64 - (5_000_000.0 * avg_latency);
+        std::println!("  Detección y Veto    : Sí (Tiempo de reacción estimado: {:.2} ns desde el inicio del ataque)", detection_delay.max(0.0));
+    }
+}
+
+fn j_range_helper(rng: &mut rand::rngs::StdRng) -> u32 {
+    rng.gen_range(1..1000)
 }
