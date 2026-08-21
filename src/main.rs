@@ -181,7 +181,10 @@ fn main() {
     let mut allowed_packets = 0u64;
     let mut rate_limited_packets = 0u64;
     let mut blocked_packets = 0u64;
-    let mut ddos_detection_time: Option<Instant> = None;
+    
+    let mut attack_start_time: Option<Instant> = None;
+    let mut mitigation_detection_time: Option<Instant> = None;
+    let mut veto_detection_time: Option<Instant> = None;
 
     let start = Instant::now();
 
@@ -192,6 +195,10 @@ fn main() {
         // - 6,000,000 a 10,000,000: Ataque DDoS
         let is_cyber_monday = i >= 3_000_000 && i < 6_000_000;
         let is_ddos_attack = i >= 6_000_000;
+
+        if i == 6_000_000 {
+            attack_start_time = Some(Instant::now());
+        }
 
         let mut snapshot = DenseSignalSnapshot {
             channel_alpha: [0; 8],
@@ -228,11 +235,21 @@ fn main() {
             1 => allowed_packets += 1,
             2 => {
                 blocked_packets += 1;
-                if is_ddos_attack && ddos_detection_time.is_none() {
-                    ddos_detection_time = Some(Instant::now());
+                if is_ddos_attack {
+                    if mitigation_detection_time.is_none() {
+                        mitigation_detection_time = Some(Instant::now());
+                    }
+                    if veto_detection_time.is_none() {
+                        veto_detection_time = Some(Instant::now());
+                    }
                 }
             }
-            3 => rate_limited_packets += 1,
+            3 => {
+                rate_limited_packets += 1;
+                if is_ddos_attack && mitigation_detection_time.is_none() {
+                    mitigation_detection_time = Some(Instant::now());
+                }
+            }
             _ => {}
         }
 
@@ -256,9 +273,13 @@ fn main() {
     std::println!("  Paquetes Limitados  : {}", rate_limited_packets);
     std::println!("  Paquetes Bloqueados : {}", blocked_packets);
     
-    if let Some(detection_start) = ddos_detection_time {
-        let detection_delay = detection_start.duration_since(start).as_nanos() as f64 - (6_000_000.0 * avg_latency);
-        std::println!("  Detección y Veto    : Sí (Tiempo de reacción estimado: {:.2} ns desde el inicio del ataque)", detection_delay.max(0.0));
+    if let (Some(attack_t), Some(mitig_t)) = (attack_start_time, mitigation_detection_time) {
+        let delay_ns = mitig_t.duration_since(attack_t).as_nanos();
+        std::println!("  Detección y Mitigación: Sí (Tiempo de reacción real: {} ns desde el inicio del ataque)", delay_ns);
+    }
+    if let (Some(attack_t), Some(veto_t)) = (attack_start_time, veto_detection_time) {
+        let delay_ns = veto_t.duration_since(attack_t).as_nanos();
+        std::println!("  Bloqueo Absoluto (Veto): Sí (Tiempo de reacción real: {} ns desde el inicio del ataque)", delay_ns);
     }
 }
 
