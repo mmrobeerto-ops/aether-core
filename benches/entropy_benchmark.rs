@@ -1,64 +1,68 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::Rng;
-use tzanix_aether_core::{AetherSignalEngine, DenseSignalSnapshot};
+use tzanix_aether_core::{AetherSignalEngine, DenseSignalSnapshot, SIGNAL_CHANNELS};
 
-fn generate_random_snapshot() -> DenseSignalSnapshot {
+/// Escenario A: Simulación de Tráfico Legítimo en Ráfaga (Cyber Monday)
+/// Alta entropía, distribución de tamaños y flujos altamente variados.
+fn generate_cyber_monday_snapshot() -> DenseSignalSnapshot {
     let mut rng = rand::thread_rng();
-    let mut channel_alpha = [0u32; 8];
-    let mut channel_beta = [0u32; 8];
+    let mut channel_alpha = [0u32; SIGNAL_CHANNELS];
+    let mut channel_beta = [0u32; SIGNAL_CHANNELS];
 
-    for i in 0..8 {
-        channel_alpha[i] = if rng.gen_bool(0.2) { 0 } else { rng.gen_range(10..5000) };
-        channel_beta[i] = if rng.gen_bool(0.2) { 0 } else { rng.gen_range(10..5000) };
+    for i in 0..SIGNAL_CHANNELS {
+        // Tamaños y flujos dispersos y heterogéneos
+        channel_alpha[i] = rng.gen_range(64..1500);
+        channel_beta[i] = rng.gen_range(64..1500);
     }
 
     DenseSignalSnapshot { channel_alpha, channel_beta }
 }
 
-fn bench_l3_entropy(c: &mut Criterion) {
-    let snapshot = generate_random_snapshot();
-    let mut group = c.benchmark_group("L3_Order_Book_Entropy");
+/// Escenario B: Simulación de Ataque Volumétrico Uniforme (DDoS SYN Flood)
+/// Baja entropía, inundación de paquetes idénticos y altamente predecibles.
+fn generate_ddos_snapshot() -> DenseSignalSnapshot {
+    let mut channel_alpha = [0u32; SIGNAL_CHANNELS];
+    let mut channel_beta = [0u32; SIGNAL_CHANNELS];
 
-    group.bench_function("AVX2_LUT_Vectorized", |b| {
-        b.iter(|| AetherSignalEngine::compute_signal_entropy(black_box(&snapshot)))
+    for i in 0..SIGNAL_CHANNELS {
+        // Paquetes idénticos y uniformes fijados a nivel de silicio
+        channel_alpha[i] = 64; 
+        channel_beta[i] = 64;
+    }
+
+    DenseSignalSnapshot { channel_alpha, channel_beta }
+}
+
+fn run_production_benchmarks(c: &mut Criterion) {
+    let cyber_monday = generate_cyber_monday_snapshot();
+    let ddos_attack = generate_ddos_snapshot();
+    
+    let mut group = c.benchmark_group("TZANiX_Aether_Core_Stress_Tests");
+
+    // Test 1: Evaluar la velocidad del motor ante ráfagas masivas de usuarios legítimos
+    group.bench_function("Cyber_Monday_High_Entropy", |b| {
+        b.iter(|| {
+            // Evaluamos la consistencia geométrica primero (~2.5 ns)
+            let _is_coherent = AetherSignalEngine::validate_circular_coherence(
+                black_box(1.0), black_box(0.0), black_box(1.0), black_box(0.01)
+            );
+            // Procesamiento de Entropía determinista por LUT (~55 ns)
+            AetherSignalEngine::compute_signal_entropy(black_box(&cyber_monday))
+        })
     });
 
-    group.bench_function("Hyper_Vectorized", |b| {
-        b.iter(|| AetherSignalEngine::compute_entropy_hyper_vectorized(black_box(&snapshot)))
-    });
-
-    group.bench_function("Vectorized_Branchless", |b| {
-        b.iter(|| AetherSignalEngine::compute_entropy_vectorized(black_box(&snapshot)))
-    });
-
-    group.bench_function("Standard_Branched", |b| {
-        b.iter(|| AetherSignalEngine::compute_entropy_standard(black_box(&snapshot)))
+    // Test 2: Evaluar la velocidad de veto del motor ante ataques de inundación DDoS
+    group.bench_function("DDoS_SYN_Flood_Low_Entropy", |b| {
+        b.iter(|| {
+            let _is_coherent = AetherSignalEngine::validate_circular_coherence(
+                black_box(1.0), black_box(0.0), black_box(1.0), black_box(0.01)
+            );
+            AetherSignalEngine::compute_signal_entropy(black_box(&ddos_attack))
+        })
     });
 
     group.finish();
 }
 
-fn bench_polarized_coherence(c: &mut Criterion) {
-    let snapshot = generate_random_snapshot();
-    c.bench_function("validate_circular_coherence_x8", |b| {
-        b.iter(|| {
-            let mut total_coherent_channels = 0;
-            for i in 0..8 {
-                let ch_x = snapshot.channel_alpha[i] as f64;
-                let ch_z = snapshot.channel_beta[i] as f64;
-                if AetherSignalEngine::validate_circular_coherence(
-                    black_box(ch_x),
-                    black_box(ch_z),
-                    black_box(0.5),
-                    black_box(0.05),
-                ) {
-                    total_coherent_channels += 1;
-                }
-            }
-            black_box(total_coherent_channels)
-        })
-    });
-}
-
-criterion_group!(benches, bench_l3_entropy, bench_polarized_coherence);
+criterion_group!(benches, run_production_benchmarks);
 criterion_main!(benches);
