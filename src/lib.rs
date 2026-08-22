@@ -140,4 +140,44 @@ impl AetherSignalEngine {
         }
         entropy
     }
+
+    /// Valida la integridad de una señal basándose en el invariante de Polarización Circular.
+    /// Verifica que la envolvente de los canales ortogonales respete el decaimiento 1/r^2 sin usar funciones trigonométricas.
+    #[inline(always)]
+    pub fn validate_circular_coherence(
+        channel_x: f64, // Componente en cuadratura u_x
+        channel_z: f64, // Componente en cuadratura u_z
+        radius_r: f64,  // Distancia geométrica / Factor de escala espacial
+        tolerance: f64, // Umbral de ruido permitido
+    ) -> bool {
+        // En lugar de calcular cos/sin, evaluamos la envolvente circular: x^2 + z^2
+        let envelope_magnitude = (channel_x * channel_x) + (channel_z * channel_z);
+        
+        // La teoría dicta que Magnitud * r^2 debe aproximarse a una constante de proporcionalidad (ej: 1.0)
+        // Evitamos la división costosa multiplicando directamente por el cuadrado del radio
+        let r_squared = radius_r * radius_r;
+        let invariant_test = envelope_magnitude * r_squared;
+        
+        // Cálculo de desviación branchless usando el valor absoluto nativo de la CPU
+        let deviation = (invariant_test - 1.0).abs();
+        
+        // Retorna TRUE si la señal mantiene la simetría circular de fase perfecta, FALSE para veto por ruido
+        deviation < tolerance
+    }
+
+    /// Calcula el campo magnético inducido B a partir del producto cruz ortogonal (u_r x E)
+    /// Operación puramente lineal optimizada para registros vectoriales FMA
+    #[inline(always)]
+    pub fn compute_induced_magnetic_field(
+        channel_x: f64,
+        channel_z: f64,
+        inv_c: f64, // Inverso de la velocidad de la luz (1.0 / c) precalculado en frío
+    ) -> (f64, f64) {
+        // Al ser u_r el vector de propagación radial puro (1, 0, 0) en coordenadas locales del rayo:
+        // el producto cruz (u_r x E) rota los componentes de los ejes ortogonales de forma directa
+        let b_x = -channel_z * inv_c;
+        let b_z = channel_x * inv_c;
+        
+        (b_x, b_z)
+    }
 }

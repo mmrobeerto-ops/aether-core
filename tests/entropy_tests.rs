@@ -37,3 +37,44 @@ fn test_entropy_precision_and_boundaries() {
     let entropy_empty_lut = AetherSignalEngine::compute_signal_entropy(&snapshot_empty);
     assert_eq!(entropy_empty_lut, 0.0);
 }
+
+#[test]
+fn test_polarized_circular_coherence() {
+    // Escenario Coherente (Simetría de fase circular pura)
+    // Con R = 2.0, el radio de proporcionalidad es r = 0.5 (1/R)
+    let ch_x_coherent = 2.0;
+    let ch_z_coherent = 0.0;
+    let radius = 0.5;
+    let tolerance = 0.05;
+
+    let is_coherent = AetherSignalEngine::validate_circular_coherence(
+        ch_x_coherent,
+        ch_z_coherent,
+        radius,
+        tolerance,
+    );
+    assert!(is_coherent, "Debe ser coherente");
+
+    // Escenario con Ruido (Asimetría)
+    let ch_x_noisy = 2.5;
+    let ch_z_noisy = 0.5;
+    let is_coherent_noisy = AetherSignalEngine::validate_circular_coherence(
+        ch_x_noisy,
+        ch_z_noisy,
+        radius,
+        tolerance,
+    );
+    assert!(!is_coherent_noisy, "Debe ser filtrado por ruido");
+
+    // Validar el cálculo del campo magnético inducido B (u_r x E)
+    let inv_c = 1.0 / 3.0; // velocidad de la luz c = 3.0
+    let (b_x, b_z) = AetherSignalEngine::compute_induced_magnetic_field(
+        ch_x_coherent,
+        ch_z_coherent,
+        inv_c,
+    );
+    // b_x = -ch_z * inv_c = -0.0 * inv_c = 0.0
+    // b_z = ch_x * inv_c = 2.0 * (1/3) = 0.6666...
+    assert_eq!(b_x, 0.0);
+    assert!((b_z - 0.6666666666666666).abs() < 1e-10);
+}

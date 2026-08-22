@@ -4,7 +4,7 @@
 
 #[cfg(not(feature = "std"))]
 use core::panic::PanicInfo;
-use tzanix_aether_core::{AetherSignalEngine, DenseSignalSnapshot};
+use tzanix_aether_core::{AetherSignalEngine, DenseSignalSnapshot, SIGNAL_CHANNELS};
 use tzanix_aether_core::storage::{SpscTelemetryBuffer, UniversalEvent};
 
 #[cfg(feature = "std")]
@@ -18,6 +18,31 @@ pub struct UniversalProductionPipeline {
 }
 
 impl UniversalProductionPipeline {
+    /// Procesa la señal polarizada para purgar el ruido basándose en cuadratura circular.
+    #[inline(always)]
+    pub fn process_polarized_signal_pass(
+        &self,
+        snapshot: &DenseSignalSnapshot,
+        radius: f64,
+        tolerance: f64,
+    ) -> bool {
+        let mut total_coherent_channels = 0;
+
+        // Evaluamos los canales vectoriales emparejados como campos en cuadratura circular
+        for i in 0..SIGNAL_CHANNELS {
+            let ch_x = snapshot.channel_alpha[i] as f64;
+            let ch_z = snapshot.channel_beta[i] as f64;
+
+            // Validación geométrica pura sin saltos condicionales pesados
+            if AetherSignalEngine::validate_circular_coherence(ch_x, ch_z, radius, tolerance) {
+                total_coherent_channels += 1;
+            }
+        }
+
+        // Retorna TRUE si la mayoría de los canales conservan la pureza de fase física de la onda
+        total_coherent_channels > (SIGNAL_CHANNELS / 2)
+    }
+
     /// Lazo síncrono crítico de ejecución pura en nanosegundos
     #[inline(always)]
     pub fn run_signal_pass(

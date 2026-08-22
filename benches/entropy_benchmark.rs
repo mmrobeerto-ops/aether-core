@@ -38,5 +38,27 @@ fn bench_l3_entropy(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_l3_entropy);
+fn bench_polarized_coherence(c: &mut Criterion) {
+    let snapshot = generate_random_snapshot();
+    c.bench_function("validate_circular_coherence_x8", |b| {
+        b.iter(|| {
+            let mut total_coherent_channels = 0;
+            for i in 0..8 {
+                let ch_x = snapshot.channel_alpha[i] as f64;
+                let ch_z = snapshot.channel_beta[i] as f64;
+                if AetherSignalEngine::validate_circular_coherence(
+                    black_box(ch_x),
+                    black_box(ch_z),
+                    black_box(0.5),
+                    black_box(0.05),
+                ) {
+                    total_coherent_channels += 1;
+                }
+            }
+            black_box(total_coherent_channels)
+        })
+    });
+}
+
+criterion_group!(benches, bench_l3_entropy, bench_polarized_coherence);
 criterion_main!(benches);
