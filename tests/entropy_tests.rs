@@ -78,3 +78,31 @@ fn test_polarized_circular_coherence() {
     assert_eq!(b_x, 0.0);
     assert!((b_z - 0.6666666666666666).abs() < 1e-10);
 }
+
+#[test]
+fn test_lucy_time_auditor() {
+    use tzanix_aether_core::lucy_core::LucyTimeAuditor;
+
+    // Umbral de 1 milisegundo (1,000,000 ns)
+    let auditor = LucyTimeAuditor::new(1_000_000);
+
+    // 1. Una función ultra-rápida (coherente)
+    let result_fast = auditor.auditar_potencial_tensor(|| {
+        let mut x = 0;
+        for i in 0..100 {
+            x += i;
+        }
+        assert!(x > 0);
+    });
+    assert!(result_fast.is_ok(), "Debe completarse con éxito");
+    let ns_elapsed = result_fast.unwrap();
+    assert!(ns_elapsed < 1_000_000, "Debe tomar menos de 1ms");
+
+    // 2. Una función que se deforma en el tiempo (sobrepasa el umbral / Singularidad)
+    let result_slow = auditor.auditar_potencial_tensor(|| {
+        // Dormir un momento para forzar la singularidad temporal
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    });
+    assert!(result_slow.is_err(), "Debe fallar debido a singularidad temporal");
+    assert_eq!(result_slow.err(), Some("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam."));
+}

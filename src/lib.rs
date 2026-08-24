@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod storage;
+pub mod lucy_core;
 
 pub const SIGNAL_CHANNELS: usize = 8;
 const LUT_SIZE: usize = 512;
