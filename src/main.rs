@@ -72,18 +72,20 @@ impl UniversalProductionPipeline {
 
         // 3. Resolución de veto libre de divisiones algebraicas (FMA)
         let coherence = (4.0 - current_entropy).max(0.0);
+        
+        // Amortiguación y burst limits de la entropía L3
+        let base_threshold = 0.018; 
         let critical_threshold = if is_cold_start {
-            0.0
+            10.0 // Evitar bloqueo/rate limit en frío
         } else {
-            self.processing_latency_sec 
-                * self.risk_multiplier 
-                * (1.0 + vol_rate * 0.005)
+            // Factor derivativo amortiguado para soportar ráfagas transitorias legítimas
+            base_threshold / (1.0 + vol_rate * 0.000004)
         };
 
         let action_flag = if current_entropy < 1.5 {
-            2 // BLACKHOLE / VETO (Bloqueo absoluto por persistencia estática)
+            2 // BLACKHOLE / VETO (Bloqueo absoluto)
         } else if coherence > critical_threshold {
-            3 // RATE LIMITING (Mitigación progresiva temporal por derivada discreta)
+            3 // RATE LIMITING (Mitigación progresiva)
         } else {
             1 // ALLOW (Tráfico legítimo)
         };
@@ -193,8 +195,16 @@ async fn handle_query(
             .unwrap();
     }
 
-    let alpha = payload.channel_alpha.unwrap_or([200, 300, 150, 400, 250, 350, 180, 220]);
-    let beta = payload.channel_beta.unwrap_or([1500, 1200, 1500, 1000, 1500, 1300, 1500, 1400]);
+    let mut alpha = payload.channel_alpha.unwrap_or([800, 800, 800, 800, 800, 800, 800, 800]);
+    let mut beta = payload.channel_beta.unwrap_or([600, 600, 600, 600, 600, 600, 600, 600]);
+
+    // Simulación de fluctuación de llegada/ruido (variación de +-1% para fluctuar la entropía de forma realista)
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    for i in 0..8 {
+        alpha[i] = (alpha[i] as i32 + rng.gen_range(-12..12)).max(1) as u32;
+        beta[i] = (beta[i] as i32 + rng.gen_range(-8..8)).max(1) as u32;
+    }
 
     let snapshot = DenseSignalSnapshot {
         channel_alpha: alpha,
@@ -213,9 +223,10 @@ async fn handle_query(
             .unwrap();
     }
 
-    // 2. Procesar entropía con la LUT vectorizada
+    // 2. Procesar entropía con la LUT vectorizada usando un dt_nano dinámico con jitter
     let mut dummy_buffer = SpscTelemetryBuffer::new();
-    let action = pipeline.run_signal_pass(&snapshot, 10.0, &mut dummy_buffer, 10001, snapshot.channel_beta[2]);
+    let dt_nano = 5.0 + (rng.gen_range(5..45) as f64);
+    let action = pipeline.run_signal_pass(&snapshot, dt_nano, &mut dummy_buffer, 10001, snapshot.channel_beta[2]);
 
     match action {
         1 => Response::builder()
