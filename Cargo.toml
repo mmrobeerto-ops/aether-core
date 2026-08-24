@@ -7,6 +7,10 @@ authors = ["TZANiX Core Team"]
 [dependencies]
 memmap2 = { version = "0.9", optional = true }
 rand = "0.8"
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [features]
 default = ["std"]

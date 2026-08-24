@@ -1,15 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(not(feature = "std"), no_main)]
 
-
 #[cfg(not(feature = "std"))]
 use core::panic::PanicInfo;
+
 use tzanix_aether_core::{AetherSignalEngine, DenseSignalSnapshot, SIGNAL_CHANNELS};
 use tzanix_aether_core::storage::{SpscTelemetryBuffer, UniversalEvent};
 
 #[cfg(feature = "std")]
 use rand::Rng;
-
 
 pub struct UniversalProductionPipeline {
     pub prev_entropy: f64,
@@ -78,25 +77,19 @@ impl UniversalProductionPipeline {
         } else {
             self.processing_latency_sec 
                 * self.risk_multiplier 
-                * vol_rate 
-                * coherence
+                * (1.0 + vol_rate * 0.005)
         };
 
-        // Estrategia de Mitigación Dinámica (PD Control)
         let action_flag = if current_entropy < 1.5 {
-            2 // BLACKHOLE: Bloqueo absoluto por desplome de entropía estática (DDoS persistente)
-        } else if critical_threshold < 1.0 {
-            1 // ALLOW: Tráfico legítimo / Coherente
-        } else if critical_threshold < 15.0 {
-            3 // RATE_LIMIT: Desviación leve o ráfaga de transición legítima
+            2 // BLACKHOLE / VETO (Bloqueo absoluto por persistencia estática)
+        } else if coherence > critical_threshold {
+            3 // RATE LIMITING (Mitigación progresiva temporal por derivada discreta)
         } else {
-            2 // BLACKHOLE: Inundación o ataque inminente detectado por volatilidad
+            1 // ALLOW (Tráfico legítimo)
         };
 
-        // 4. Inserción atómica en el Ring Buffer
-        let mut tsc: u64 = 0;
-        
-        #[cfg(target_arch = "x86_64")]
+        // 4. Telemetría de tiempo de reloj real usando TSC (Time Stamp Counter)
+        let tsc: u64;
         unsafe {
             core::arch::asm!("rdtsc", "shl rdx, 32", "or rax, rdx", out("rax") tsc, out("rdx") _);
         }
@@ -120,65 +113,225 @@ impl UniversalProductionPipeline {
 #[cfg(not(feature = "std"))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    // En sistemas embebidos de misión crítica o HFT, el pánico ejecuta un bucle infinito de seguridad
-    // para evitar un volcado de memoria lento o llamadas imprevistas al sistema operativo.
     loop {}
 }
 
 #[cfg(feature = "std")]
-fn main() {
+#[tokio::main]
+async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && (args[1] == "server" || args[1] == "--server") {
+        run_server().await;
+    } else {
+        run_simulation();
+    }
+}
+
+// --- SERVIDOR DE PRODUCCIÓN HTTP PARA PRUEBAS DE ESTRÉS ---
+#[cfg(feature = "std")]
+async fn run_server() {
+    use axum::{
+        routing::{get, post},
+        Router,
+    };
+    use std::sync::{Arc, Mutex};
+
+    let pipeline = Arc::new(Mutex::new(UniversalProductionPipeline {
+        prev_entropy: 0.0,
+        risk_multiplier: 2.0,
+        processing_latency_sec: 1e-6,
+    }));
+
+    let app = Router::new()
+        .route("/api/v1/query", post(handle_query))
+        .route("/api/v1/heavy-calc", get(handle_heavy_calc).post(handle_heavy_calc))
+        .with_state(pipeline);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    std::println!("🔥 Servidor de stress TZANiX-Aether-Core activo en http://0.0.0.0:8000");
+    axum::serve(listener, app).await.unwrap();
+}
+
+#[cfg(feature = "std")]
+#[derive(serde::Deserialize, Debug)]
+struct QueryPayload {
+    channel_alpha: Option<[u32; 8]>,
+    channel_beta: Option<[u32; 8]>,
+    tensor: Option<Vec<serde_json::Value>>,
+}
+
+#[cfg(feature = "std")]
+async fn handle_query(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<std::sync::Mutex<UniversalProductionPipeline>>>,
+    body_str: String,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::Response;
+
+    // Escenario B: Payload corrupto / Inyección de NaN / inf
+    if body_str.contains("NaN") || body_str.contains("inf") || body_str.contains("Infinity") {
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(axum::body::Body::from("Blocked by TZANiX Q-Guard (Veto Geométrico / Payload Corrupto)"))
+            .unwrap();
+    }
+
+    let payload: QueryPayload = match serde_json::from_str(&body_str) {
+        Ok(p) => p,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::FORBIDDEN)
+                .body(axum::body::Body::from("Blocked by TZANiX Q-Guard (JSON Inválido)"))
+                .unwrap();
+        }
+    };
+
+    if payload.tensor.is_some() {
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(axum::body::Body::from("Blocked by TZANiX Q-Guard (Tensor Veto)"))
+            .unwrap();
+    }
+
+    let alpha = payload.channel_alpha.unwrap_or([200, 300, 150, 400, 250, 350, 180, 220]);
+    let beta = payload.channel_beta.unwrap_or([1500, 1200, 1500, 1000, 1500, 1300, 1500, 1400]);
+
+    let snapshot = DenseSignalSnapshot {
+        channel_alpha: alpha,
+        channel_beta: beta,
+    };
+
+    let mut pipeline = state.lock().unwrap();
+
+    // 1. Purgar el ruido con validación polarizada circular (~2.5 ns/canal)
+    let is_coherent = pipeline.process_polarized_signal_pass(&snapshot, 1.0, 0.05);
+
+    if !is_coherent {
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(axum::body::Body::from("Blocked by TZANiX Q-Guard (Fallo Coherencia Polarizada)"))
+            .unwrap();
+    }
+
+    // 2. Procesar entropía con la LUT vectorizada
+    let mut dummy_buffer = SpscTelemetryBuffer::new();
+    let action = pipeline.run_signal_pass(&snapshot, 10.0, &mut dummy_buffer, 10001, snapshot.channel_beta[2]);
+
+    match action {
+        1 => Response::builder()
+            .status(StatusCode::OK)
+            .body(axum::body::Body::from("Allowed"))
+            .unwrap(),
+        3 => Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .body(axum::body::Body::from("Rate Limited"))
+            .unwrap(),
+        2 => Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(axum::body::Body::from("Blocked by TZANiX Q-Guard"))
+            .unwrap(),
+        _ => Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(axum::body::Body::from("Error"))
+            .unwrap(),
+    }
+}
+
+#[cfg(feature = "std")]
+#[derive(serde::Deserialize)]
+struct HeavyParams {
+    stress: Option<bool>,
+}
+
+#[cfg(feature = "std")]
+async fn handle_heavy_calc(
+    axum::extract::Query(params): axum::extract::Query<HeavyParams>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::Response;
+    use tzanix_aether_core::lucy_core::LucyTimeAuditor;
+
+    // Umbral de 5 milisegundos (5_000_000 ns)
+    let auditor = LucyTimeAuditor::new(5_000_000);
+
+    let is_stress = params.stress.unwrap_or(true); // true por defecto para el benchmark de Oha
+
+    let result = auditor.auditar_potencial_tensor(|| {
+        if is_stress {
+            // Simular cálculo de CPU pesado que excede 5ms (50 millones de iteraciones)
+            let mut x = 0u64;
+            for i in 0..50_000_000 {
+                x = x.wrapping_add(i);
+            }
+            let _ = std::hint::black_box(x);
+        } else {
+            // Caso rápido
+            let mut x = 0u64;
+            for i in 0..1000 {
+                x = x.wrapping_add(i);
+            }
+            let _ = std::hint::black_box(x);
+        }
+    });
+
+    match result {
+        Ok(ns) => Response::builder()
+            .status(StatusCode::OK)
+            .body(axum::body::Body::from(format!("Allowed. Elapsed: {} ns", ns)))
+            .unwrap(),
+        Err(msg) => Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(axum::body::Body::from(msg))
+            .unwrap(),
+    }
+}
+
+// --- MANTENER LA SIMULACIÓN DE CONSOLA ESTÁNDAR ---
+#[cfg(feature = "std")]
+fn run_simulation() {
     use tzanix_aether_core::storage::SpscTelemetryBuffer;
     use tzanix_aether_core::DenseSignalSnapshot;
     use std::time::Instant;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use rand::Rng;
 
-    // 1. Inicializar el buffer de telemetría y el pipeline de producción
     let mut telemetry_queue = SpscTelemetryBuffer::new();
 
     let mut pipeline = UniversalProductionPipeline {
         prev_entropy: 0.0,
         risk_multiplier: 2.0,
-        processing_latency_sec: 1e-6, // 1 microsegundo de latencia de red estimada
+        processing_latency_sec: 1e-6,
     };
 
     std::println!("--- Simulación de Ciberseguridad: Filtro Anti-DDoS L3 ---");
 
-    // Escenario A: Tráfico Normal (Alta entropía, permitido)
     let snapshot_normal = DenseSignalSnapshot {
         channel_alpha: [200, 300, 150, 400, 250, 350, 180, 220],
         channel_beta: [1500, 1200, 1500, 1000, 1500, 1300, 1500, 1400],
     };
 
-    // Escenario B: "Cyber Monday" (Pico legítimo: alto volumen, alta variabilidad, PERMITIDO)
     let snapshot_cyber_monday = DenseSignalSnapshot {
         channel_alpha: [15000, 18000, 12000, 22000, 16000, 19000, 11000, 14000],
-        channel_beta: [1500, 1200, 64, 1000, 1500, 128, 512, 1400], // Alta dispersión
+        channel_beta: [1500, 1200, 64, 1000, 1500, 128, 512, 1400],
     };
 
-    // Escenario C: Ataque DDoS Flooding SYN Flood (Inundación de paquetes idénticos pequeños de 64 bytes)
     let snapshot_ddos = DenseSignalSnapshot {
         channel_alpha: [200, 300, 100000, 400, 250, 350, 180, 220],
-        channel_beta: [1500, 1200, 64, 1000, 1500, 1300, 1500, 1400], // Uniforme en subred 3
+        channel_beta: [1500, 1200, 64, 1000, 1500, 1300, 1500, 1400],
     };
 
-    // Paso 1: Tráfico Normal
     std::println!("\n[Paso 1] Evaluando Tráfico de Red Normal (Entropía alta/Caos distribuido):");
     let action_a = pipeline.run_signal_pass(&snapshot_normal, 100.0, &mut telemetry_queue, 10003, 1500);
     std::println!("  Acción del Pipeline: {} ({})", action_a, get_action_desc(action_a));
 
-    // Paso 2: Cyber Monday
     std::println!("\n[Paso 2] Evaluando Ráfaga Cyber Monday (Pico legítimo 80x vol, alta variabilidad):");
     let action_b = pipeline.run_signal_pass(&snapshot_cyber_monday, 100.0, &mut telemetry_queue, 10003, 1200);
     std::println!("  Acción del Pipeline: {} ({})", action_b, get_action_desc(action_b));
 
-    // Paso 3: Ataque DDoS
     std::println!("\n[Paso 3] Evaluando Ataque DDoS SYN Flood en Subred 3:");
     let action_c = pipeline.run_signal_pass(&snapshot_ddos, 50.0, &mut telemetry_queue, 10003, 64);
     std::println!("  Acción del Pipeline: {} ({})", action_c, get_action_desc(action_c));
 
-    // Leer el buffer
     std::println!("\n--- Registro de Eventos de Ciberseguridad ---");
     let head = telemetry_queue.head.load(core::sync::atomic::Ordering::Relaxed);
     for idx in 0..head {
@@ -191,7 +344,6 @@ fn main() {
         std::println!("  Veredicto       : {} ({})", event.action_type, get_action_desc(event.action_type));
     }
 
-    // --- PRUEBA DE SUMO ESTRÉS DE ALTO RENDIMIENTO CON SIMULACIÓN DE DDOS ---
     std::println!("\n--- Iniciando Prueba de Sumo Estrés (10 Millones de Paquetes L3) ---");
     let mut rng = StdRng::seed_from_u64(42);
     let mut pipeline_stress = UniversalProductionPipeline {
@@ -214,10 +366,6 @@ fn main() {
     let start = Instant::now();
 
     for i in 0..iterations {
-        // Estadios del estrés:
-        // - 0 a 3,000,000: Tráfico normal
-        // - 3,000,000 a 6,000,000: Cyber Monday (Pico de ráfaga legítimo)
-        // - 6,000,000 a 10,000,000: Ataque DDoS
         let is_cyber_monday = i >= 3_000_000 && i < 6_000_000;
         let is_ddos_attack = i >= 6_000_000;
 
@@ -232,28 +380,25 @@ fn main() {
 
         for j in 0..8 {
             if is_ddos_attack && j == 2 {
-                // SYN Flood: Gran cantidad de paquetes pequeños
                 snapshot.channel_alpha[j] = rng.gen_range(80_000..120_000);
-                snapshot.channel_beta[j] = 64; // Paquetes pequeños uniformes
+                snapshot.channel_beta[j] = 64;
             } else if is_cyber_monday {
-                // Cyber Monday: Volumen masivo distribuido, tamaño mixto
                 snapshot.channel_alpha[j] = rng.gen_range(12_000..18_000);
                 snapshot.channel_beta[j] = if j % 2 == 0 { 1500 } else { 64 };
             } else {
-                // Tráfico normal
                 snapshot.channel_alpha[j] = rng.gen_range(50..500);
                 snapshot.channel_beta[j] = rng.gen_range(64..1500);
             }
         }
 
-        let dt = 10.0 + (i % 50) as f64; // dt dinámico
+        let dt = 10.0 + (i % 50) as f64;
 
         let action = pipeline_stress.run_signal_pass(
             &snapshot,
             dt,
             &mut telemetry_queue_stress,
-            10000 + (j_range_helper(&mut rng) % 250), // entity_id (IP)
-            snapshot.channel_beta[2], // packet size targeted
+            10000 + (j_range_helper(&mut rng) % 250),
+            snapshot.channel_beta[2],
         );
 
         match action {
@@ -308,6 +453,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "std")]
 fn get_action_desc(code: u8) -> &'static str {
     match code {
         1 => "ALLOW (Tráfico legítimo)",
@@ -317,6 +463,7 @@ fn get_action_desc(code: u8) -> &'static str {
     }
 }
 
+#[cfg(feature = "std")]
 fn j_range_helper(rng: &mut rand::rngs::StdRng) -> u32 {
     rng.gen_range(1..1000)
 }
