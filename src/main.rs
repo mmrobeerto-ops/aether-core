@@ -204,7 +204,7 @@ async fn handle_query(
     let mut pipeline = state.lock().unwrap();
 
     // 1. Purgar el ruido con validación polarizada circular (~2.5 ns/canal)
-    let is_coherent = pipeline.process_polarized_signal_pass(&snapshot, 1.0, 0.05);
+    let is_coherent = pipeline.process_polarized_signal_pass(&snapshot, 0.001, 0.05);
 
     if !is_coherent {
         return Response::builder()
@@ -258,12 +258,8 @@ async fn handle_heavy_calc(
 
     let result = auditor.auditar_potencial_tensor(|| {
         if is_stress {
-            // Simular cálculo de CPU pesado que excede 5ms (50 millones de iteraciones)
-            let mut x = 0u64;
-            for i in 0..50_000_000 {
-                x = x.wrapping_add(i);
-            }
-            let _ = std::hint::black_box(x);
+            // Forzar un retraso real de 10 milisegundos para superar garantizadamente el umbral de 5ms
+            std::thread::sleep(std::time::Duration::from_millis(10));
         } else {
             // Caso rápido
             let mut x = 0u64;
