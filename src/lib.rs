@@ -2,6 +2,7 @@
 
 pub mod storage;
 pub mod lucy_core;
+pub mod optimizer;
 
 pub const SIGNAL_CHANNELS: usize = 8;
 const LUT_SIZE: usize = 512;
