@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  tzanix-aether-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tzanix-aether-core-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - GATEWAY_MODE=AUDIT
+      - RUST_LOG=info
+    restart: unless-stopped
+    depends_on:
+      - mock-protected-api
+    networks:
+      - tzanix-network
+
+  # API protegida mock justo detrás del contenedor de TZANiX
+  mock-protected-api:
+    image: nginx:alpine
+    container_name: mock-protected-backend-api
+    expose:
+      - "80"
+    volumes:
+      # Configuración simple de Nginx que devuelve JSON plano
+      - ./scratch/nginx_mock.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    networks:
+      - tzanix-network
+
+networks:
+  tzanix-network:
+    driver: bridge

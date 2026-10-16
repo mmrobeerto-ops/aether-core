@@ -37,7 +37,7 @@ impl LucyTimeAuditor {
         Ok(duracion)
     }
 
-    /// Evalúa la legitimidad basándose en ciclos de reloj de CPU (TSC) para entornos no_std
+    /// Evalúa la legitimidad basándose en ciclos de reloj de CPU (TSC) para entornos no_std en x86_64
     #[cfg(all(not(feature = "std"), target_arch = "x86_64"))]
     pub fn auditar_potencial_tensor_cycles<F>(&self, mut f_vector: F) -> Result<u64, &'static str>
     where
@@ -51,6 +51,32 @@ impl LucyTimeAuditor {
 
         if elapsed_cycles as u128 > self.umbral_nanosegundos {
             return Err("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam.");
+        }
+
+        Ok(elapsed_cycles)
+    }
+
+    /// Evalúa la legitimidad basándose en el temporizador virtual CNTVCT_EL0 en ARMv8/ARMv9 (SmartNIC DPU BlueField)
+    #[cfg(all(not(feature = "std"), target_arch = "aarch64"))]
+    pub fn auditar_potencial_tensor_cycles<F>(&self, mut f_vector: F) -> Result<u64, &'static str>
+    where
+        F: FnMut(),
+    {
+        let mut start_cycles: u64;
+        unsafe {
+            core::arch::asm!("mrs {}, cntvct_el0", out(reg) start_cycles, options(nomem, nostack));
+        }
+
+        f_vector();
+
+        let mut end_cycles: u64;
+        unsafe {
+            core::arch::asm!("mrs {}, cntvct_el0", out(reg) end_cycles, options(nomem, nostack));
+        }
+
+        let elapsed_cycles = end_cycles.wrapping_sub(start_cycles);
+        if elapsed_cycles as u128 > self.umbral_nanosegundos {
+            return Err("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam (ARM DPU).");
         }
 
         Ok(elapsed_cycles)

@@ -32,15 +32,38 @@ impl OptimizationLUT {
         let mut lut = [0.0; 1024];
         for i in 0..1024 {
             let v = (i as f32 / 1024.0) * 10.0;
-            let cosh = v.cosh();
-            lut[i] = 1.0 / (cosh * cosh);
+            // Cálculo puramente no_std de cosh(v) = (e^v + e^-v) / 2
+            // Para v >= 9.0, 1.0 / cosh(v)^2 converge a 0.0 rápidamente
+            if v > 9.0 {
+                lut[i] = 0.0;
+            } else {
+                let exp_v = Self::fast_exp_no_std(v);
+                let exp_neg_v = 1.0 / exp_v;
+                let cosh = (exp_v + exp_neg_v) * 0.5;
+                lut[i] = 1.0 / (cosh * cosh);
+            }
         }
         Self { cosh_inv_sq: lut }
     }
 
+    /// Aproximación rápida y continua de e^x en no_std usando serie de Taylor / Polinomio Pade
+    #[inline(always)]
+    fn fast_exp_no_std(x: f32) -> f32 {
+        // e^x para x positivo limitado
+        let mut sum = 1.0;
+        let mut term = 1.0;
+        let mut n = 1.0;
+        while n <= 14.0 {
+            term *= x / n;
+            sum += term;
+            n += 1.0;
+        }
+        sum
+    }
+
     #[inline(always)]
     pub fn get_cosh_inv_sq(&self, v: f32) -> f32 {
-        let v_abs = v.abs();
+        let v_abs = if v < 0.0 { -v } else { v };
         if v_abs >= 10.0 {
             return 0.0;
         }
@@ -67,6 +90,17 @@ impl EvolutionaryOptimizer {
         }
     }
 
+    #[inline(always)]
+    fn clamp_f32(val: f32, min_val: f32, max_val: f32) -> f32 {
+        if val < min_val {
+            min_val
+        } else if val > max_val {
+            max_val
+        } else {
+            val
+        }
+    }
+
     /// Mutates the dynamic parameters stochastically based on recent entropy
     #[inline(always)]
     pub fn mutate_parameters(&mut self, current_entropy: f32) {
@@ -76,11 +110,11 @@ impl EvolutionaryOptimizer {
         if current_entropy < self.threshold {
             // Low entropy (Possible Flash Crash or DDoS)
             // Stochastically tighten the EMA filter
-            self.ema_alpha = (self.ema_alpha * 0.9 + (rand_val * 0.05)).clamp(0.001, 0.05);
-            self.threshold = (self.threshold + rand_val * 0.1).clamp(1.0, 3.0);
+            self.ema_alpha = Self::clamp_f32(self.ema_alpha * 0.9 + (rand_val * 0.05), 0.001, 0.05);
+            self.threshold = Self::clamp_f32(self.threshold + rand_val * 0.1, 1.0, 3.0);
         } else {
             // High entropy (Normal chaotic traffic)
-            self.ema_alpha = (self.ema_alpha * 1.05).clamp(0.01, 0.1);
+            self.ema_alpha = Self::clamp_f32(self.ema_alpha * 1.05, 0.01, 0.1);
         }
     }
 }

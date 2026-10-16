@@ -1,8 +1,21 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(all(not(feature = "std"), not(test)))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
 pub mod storage;
 pub mod lucy_core;
 pub mod optimizer;
+pub mod doca_adapter;
+pub mod fpga_fixed_point;
+pub mod gpu_spectral_fft;
+pub mod telemetry_exporter;
+pub mod ffi;
+#[cfg(feature = "python")]
+pub mod python_bindings;
 
 pub const SIGNAL_CHANNELS: usize = 8;
 const LUT_SIZE: usize = 512;
@@ -160,8 +173,9 @@ impl AetherSignalEngine {
         let r_squared = radius_r * radius_r;
         let invariant_test = envelope_magnitude * r_squared;
         
-        // Cálculo de desviación branchless usando el valor absoluto nativo de la CPU
-        let deviation = (invariant_test - 1.0).abs();
+        // Cálculo de desviación branchless usando el valor absoluto en no_std
+        let diff = invariant_test - 1.0;
+        let deviation = if diff < 0.0 { -diff } else { diff };
         
         // Retorna TRUE si la señal mantiene la simetría circular de fase perfecta, FALSE para veto por ruido
         deviation < tolerance

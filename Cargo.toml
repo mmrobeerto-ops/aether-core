@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2021"
 authors = ["TZANiX Core Team"]
 
+[lib]
+name = "tzanix_aether_core"
+crate-type = ["rlib", "staticlib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
 [dependencies]
 memmap2 = { version = "0.9", optional = true }
 rand = "0.8"
@@ -12,9 +22,14 @@ tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Dependencia de Python, aislada y opcional
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+
 [features]
 default = ["std"]
 std = ["dep:memmap2"]
+# Feature flag para habilitar compilación de bindings PyO3
+python = ["dep:pyo3", "std"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -1,0 +1,14 @@
+# Configuración de Prometheus para el Appliance TZANiX Æther-Core (Arquitectura Tridente)
+global:
+  scrape_interval: 1s
+  evaluation_interval: 1s
+
+scrape_configs:
+  - job_name: "tzanix_trident_silicon_telemetry"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["localhost:9100", "host.docker.internal:9100"]
+        labels:
+          appliance: "tzanix-aether-core-trident"
+          fabric: "fpga-q16-gpu-rdma"
+          cluster_nodes: "8"
