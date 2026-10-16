@@ -86,4 +86,4 @@ Python es conocido por su lentitud debido al overhead de su tipado dinámico en 
 
 Desarrollado para el I+D institucional de TZANiX.
 *   **Uso Libre / Investigación:** GNU AGPLv3.
-*   **Uso Comercial:** Licencia privada bajo contrato corporativo. Contacto en **aureasystems.mx**.
+*   **Uso Comercial:** Licencia privada bajo contrato corporativo. Contacto en **mmrobeerto@gmail.com**.
