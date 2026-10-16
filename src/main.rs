@@ -360,7 +360,8 @@ async fn handle_simulate_burst(
         gpu_fft_threshold_q16: FpgaSiliconPipeline::to_q16(3.5500),
     };
     let out = fpga.step_clock_pipeline(&flit);
-    st.last_entropy_f64 = out.entropy_as_f64();
+    let entropy_val = out.entropy_as_f64();
+    st.last_entropy_f64 = entropy_val;
 
     let next_id = format!("INC-TZANIX-2026-{:05}", 942 + st.forensic_log.len());
 
@@ -370,7 +371,7 @@ async fn handle_simulate_burst(
         st.last_fft_bins = [95, 6, 5, 4, 6, 5, 4, 5, 6, 4, 5, 6, 4, 5, 4, 5];
         st.last_verdict = format!(
             "DROP HARDWARE [SYN-Flood L4] (Cut-Through 10.0 ns | H = {:.4} < CSR {:.4})",
-            st.last_entropy_f64,
+            entropy_val,
             (st.csr_drop_q16 as f64) / 65536.0
         );
         st.forensic_log.insert(0, ForensicThreatRecord {
@@ -381,7 +382,7 @@ async fn handle_simulate_burst(
             asn: "AS209605 HostBaltic Flood Net".to_string(),
             reputation: "Volumetric Botnet Node".to_string(),
             attack_vector: "SYN-Flood Volumétrico L4 / UDP Amplification".to_string(),
-            entropy_bits: st.last_entropy_f64,
+            entropy_bits: entropy_val,
             entropy_q16: out.entropy_q16,
             dominant_fft_bin: 0,
             action: "DROP HARDWARE (10.0 ns Cut-Through)".to_string(),
@@ -408,7 +409,7 @@ async fn handle_simulate_burst(
             asn: "AS24940 Hetzner Anonymizer".to_string(),
             reputation: "Stealth Pulsing Botnet / AI Scraper".to_string(),
             attack_vector: format!("HTTP/2 Low-Rate Pulsing DoS (Nyquist Bin #{})", report.dominant_ac_bin),
-            entropy_bits: st.last_entropy_f64,
+            entropy_bits: entropy_val,
             entropy_q16: out.entropy_q16,
             dominant_fft_bin: report.dominant_ac_bin,
             action: "GPU FFT CAPTURE -> CSR AUTO-HARDENED (3.5200)".to_string(),
@@ -419,7 +420,7 @@ async fn handle_simulate_burst(
         st.last_fft_bins = [20, 18, 24, 19, 22, 21, 17, 23, 19, 21, 20, 18, 22, 19, 21, 18];
         st.last_verdict = format!(
             "ALLOW FAST-PATH (10.0 ns | H = {:.4} bits | 0% Falsos Positivos)",
-            st.last_entropy_f64
+            entropy_val
         );
     }
 
