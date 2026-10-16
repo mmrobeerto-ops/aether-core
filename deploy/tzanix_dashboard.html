@@ -224,6 +224,27 @@
       }
     }
 
+    async function syncWithTokio(modeStr, customCsrVal = null) {
+      if (!window.location.protocol.startsWith('http')) return;
+      try {
+        const res = await fetch('/api/v1/simulate-burst', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: modeStr, custom_csr: customCsrVal })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          forwards = data.packets_forwarded;
+          drops = data.cut_through_drops;
+          gpuTriggers = data.gpu_fft_triggers;
+          csr = data.csr_drop_float;
+          epoch = data.rdma_epoch;
+          pushLog(`[TOKIO RUST ENGINE] ${data.last_verdict}`, 'text-indigo-300 font-semibold');
+          updateVisuals();
+        }
+      } catch (_e) {}
+    }
+
     function setScenario(sc) {
       scenario = sc;
       const specStatus = document.getElementById('spec-status');
@@ -245,6 +266,7 @@
         pushLog('Auto-Hardening CSR: Umbral elevado de 1.9000 -> 3.5200 y replicado vía RDMA.', 'text-indigo-400');
       }
       updateVisuals();
+      syncWithTokio(sc);
     }
 
     function manualCsr(val) {
@@ -252,6 +274,7 @@
       epoch += 8;
       pushLog(`CLI tzanix_ctl override: CSR ajustado manualmente a ${csr.toFixed(4)} en los 8 nodos.`, 'text-amber-300');
       updateVisuals();
+      syncWithTokio(scenario, csr);
     }
 
     function trigger10MAvalanche() {
@@ -262,6 +285,7 @@
       epoch = 5342026;
       pushLog('CERTIFICACIÓN 10M FLITS (593.07 ms): 7.0M Forwards (100% legítimo) | 2,999,744 Drops.', 'text-emerald-300');
       updateVisuals();
+      syncWithTokio('avalanche');
     }
 
     initDashboard();
