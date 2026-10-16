@@ -3,121 +3,249 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TZANiX Æther-Core · Trident Silicon Command Center</title>
+  <title>TZANiX Æther-Core · Military & HFT Silicon Command Center</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #08080A;
+      background-image:
+        radial-gradient(circle at 15% 15%, rgba(0, 240, 255, 0.05) 0%, transparent 35%),
+        radial-gradient(circle at 85% 80%, rgba(212, 175, 55, 0.05) 0%, transparent 40%),
+        linear-gradient(rgba(42, 42, 53, 0.18) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(42, 42, 53, 0.18) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+      font-family: 'Inter', system-ui, sans-serif;
+      color: #F4F4F6;
+    }
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    .panel-anthracite {
+      background: rgba(20, 20, 25, 0.88);
+      border: 1px solid #2A2A35;
+      backdrop-filter: blur(12px);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .glow-cyan {
+      border-color: rgba(0, 240, 255, 0.55) !important;
+      box-shadow: 0 0 24px -4px rgba(0, 240, 255, 0.22), inset 0 0 12px rgba(0, 240, 255, 0.06);
+    }
+    .glow-emerald {
+      border-color: rgba(0, 255, 102, 0.55) !important;
+      box-shadow: 0 0 24px -4px rgba(0, 255, 102, 0.22), inset 0 0 12px rgba(0, 255, 102, 0.06);
+    }
+    .glow-gold {
+      border-color: #D4AF37 !important;
+      box-shadow: 0 0 32px -2px rgba(212, 175, 55, 0.38), inset 0 0 16px rgba(255, 183, 3, 0.10);
+    }
+    .glow-laser-red {
+      border-color: #FF3366 !important;
+      box-shadow: 0 0 30px -2px rgba(255, 51, 102, 0.38), inset 0 0 16px rgba(255, 51, 102, 0.10);
+    }
+    /* Barras del Espectro FFT-16 con Gradientes Verticales */
+    .bar-cyan-grad {
+      background: linear-gradient(180deg, #00F0FF 0%, #0077FF 45%, #0A1931 100%);
+      box-shadow: 0 -2px 10px rgba(0, 240, 255, 0.45);
+    }
+    .bar-gold-fire {
+      background: linear-gradient(180deg, #FFF3B0 0%, #FFB703 35%, #D4AF37 75%, #7F4F24 100%);
+      box-shadow: 0 0 18px rgba(255, 183, 3, 0.85), 0 -4px 12px rgba(212, 175, 55, 0.7);
+    }
+    .bar-red-laser {
+      background: linear-gradient(180deg, #FF758F 0%, #FF3366 45%, #590D22 100%);
+      box-shadow: 0 0 16px rgba(255, 51, 102, 0.75);
+    }
+    /* Slider Metálico / Translúcido */
+    input[type=range].metallic-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #00F0FF 0%, #D4AF37 65%, #FF3366 100%);
+      outline: none;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.8), 0 0 10px rgba(212, 175, 55, 0.25);
+    }
+    input[type=range].metallic-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #FFFFFF 0%, #D4AF37 55%, #8A6D1B 100%);
+      border: 2px solid #FFF8D6;
+      box-shadow: 0 0 14px rgba(255, 183, 3, 0.9);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    input[type=range].metallic-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+    /* Terminal Matrix Log */
+    .matrix-terminal {
+      background: #050507;
+      border: 1px solid rgba(0, 240, 255, 0.28);
+      box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.05), 0 0 15px rgba(0, 240, 255, 0.08);
+    }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 antialiased min-h-screen p-6">
+<body class="min-h-screen p-5 md:p-7">
   <div class="max-w-7xl mx-auto space-y-6">
-    <!-- Top Executive Bar -->
-    <header class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+    <!-- Top Executive Command Header -->
+    <header id="top-header" class="panel-anthracite glow-cyan rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-4">
-        <div class="w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-2xl font-bold text-indigo-400">
+        <div class="relative w-13 h-13 px-3.5 py-2.5 rounded-xl bg-[#0B0B10] border border-[#00F0FF]/50 flex items-center justify-center text-2xl font-extrabold font-mono-tech text-[#00F0FF] shadow-[0_0_20px_rgba(0,240,255,0.3)]">
           Æ
+          <span class="absolute -top-1 -right-1 flex h-3 w-3">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00FF66] opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-[#00FF66]"></span>
+          </span>
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
-            <h1 class="text-xl font-bold tracking-tight text-white">TZANiX Æther-Core · Arquitectura Tridente</h1>
-            <span class="px-2.5 py-0.5 text-xs font-mono font-semibold rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              SILICON LINE-RATE: 10.0 ns
+          <div class="flex flex-wrap items-center gap-3">
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white">TZANiX Æther-Core · Trident Command Center</h1>
+            <span id="header-badge" class="px-3 py-0.5 text-xs font-mono-tech font-bold rounded-full bg-[#00FF66]/10 text-[#00FF66] border border-[#00FF66]/40 shadow-[0_0_12px_rgba(0,255,102,0.25)]">
+              SILICON CUT-THROUGH: 10.0 ns
             </span>
           </div>
-          <p class="text-sm text-slate-400 mt-0.5">
-            Escudo FPGA Q16.16 (AXI4-Stream 512-bit @ 400 MHz) · Cerebro Espectral GPU FFT-16 · Clúster RDMA RoCEv2 (8 Nodos)
+          <p class="text-xs md:text-sm text-zinc-400 mt-1">
+            Vértice I: FPGA <span class="font-mono-tech text-[#00F0FF]">Q16.16</span> (400 MHz) · Vértice II: GPU <span class="font-mono-tech text-[#FFB703]">FFT-16 Radix-2</span> · Vértice III: Malla <span class="font-mono-tech text-[#00FF66]">RDMA RoCEv2</span>
           </p>
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
-        <button onclick="setScenario('normal')" id="sc-normal" class="px-3.5 py-2 rounded-lg text-xs font-semibold border border-emerald-500/50 bg-emerald-500/20 text-emerald-300 transition">
-          1. Tráfico Nominal (FinTech / HFT)
+      <!-- Interactive Demo Controls -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button onclick="setScenario('normal')" id="sc-normal" class="px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#00FF66]/60 bg-[#00FF66]/15 text-[#00FF66] shadow-[0_0_15px_rgba(0,255,102,0.2)] transition">
+          1. Tráfico Legítimo (HFT / Médico)
         </button>
-        <button onclick="setScenario('ddos')" id="sc-ddos" class="px-3.5 py-2 rounded-lg text-xs font-semibold border border-slate-700 bg-slate-800 text-slate-300 hover:border-rose-500/50 transition">
-          2. Ataque DDoS Volumétrico (Cut-Through)
+        <button onclick="setScenario('ddos')" id="sc-ddos" class="px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#2A2A35] bg-[#141419] text-zinc-300 hover:border-[#FF3366] hover:text-[#FF3366] transition">
+          2. DDoS Volumétrico (Cut-Through)
         </button>
-        <button onclick="setScenario('stealth')" id="sc-stealth" class="px-3.5 py-2 rounded-lg text-xs font-semibold border border-slate-700 bg-slate-800 text-slate-300 hover:border-amber-500/50 transition">
-          3. Ataque Sigiloso "Zona Gris" (GPU FFT-16)
+        <button onclick="setScenario('stealth')" id="sc-stealth" class="px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#2A2A35] bg-[#141419] text-zinc-300 hover:border-[#D4AF37] hover:text-[#FFB703] transition">
+          3. Zona Gris (GPU FFT-16)
         </button>
-        <button onclick="trigger10MAvalanche()" class="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition">
-          ⚡ Lanzar Avalancha 10,000,000 Flits
+        <button onclick="trigger10MAvalanche()" class="px-4 py-2 rounded-lg text-xs font-bold font-mono-tech bg-gradient-to-r from-[#D4AF37] via-[#FFB703] to-[#D4AF37] text-black shadow-[0_0_20px_rgba(255,183,3,0.45)] hover:brightness-110 transition">
+          ⚡ AVALANCHA 10,000,000 FLITS
         </button>
       </div>
     </header>
 
-    <!-- Primary Metrics Strip -->
-    <section class="grid grid-cols-1 md:grid-cols-5 gap-4">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div class="text-xs text-slate-400 uppercase tracking-wider">Throughput Concurrente</div>
-        <div id="m-throughput" class="text-2xl font-mono font-bold text-white mt-1">16.86 Mpps</div>
-        <div class="text-xs text-emerald-400 font-mono mt-1">8.63 Gbps (59.31 ns/flit Host)</div>
+    <!-- 5 High-Contrast Institutional KPI Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div id="kpi-card-1" class="panel-anthracite glow-cyan rounded-xl p-4">
+        <div class="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Caudal en Línea (FPGA)</div>
+        <div id="m-throughput" class="text-2xl font-mono-tech font-extrabold text-[#00F0FF] mt-1">16.86 Mpps</div>
+        <div class="text-xs font-mono-tech text-zinc-400 mt-1">Latencia Fija: <span class="text-[#00FF66] font-bold">10.0 ns</span> (400 MHz)</div>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div class="text-xs text-slate-400 uppercase tracking-wider">Fast-Path Forwards</div>
-        <div id="m-forwards" class="text-2xl font-mono font-bold text-emerald-400 mt-1">7,000,000</div>
-        <div class="text-xs text-slate-400 mt-1">100.0% Integridad (0 Falsos Positivos)</div>
+
+      <div id="kpi-card-2" class="panel-anthracite glow-emerald rounded-xl p-4">
+        <div class="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Fast-Path Forwards</div>
+        <div id="m-forwards" class="text-2xl font-mono-tech font-extrabold text-[#00FF66] mt-1">7,000,000</div>
+        <div class="text-xs font-mono-tech text-[#00FF66]/80 mt-1">100.0% Integridad · 0% Falsos Pos.</div>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div class="text-xs text-slate-400 uppercase tracking-wider">FPGA Cut-Through Drops</div>
-        <div id="m-drops" class="text-2xl font-mono font-bold text-rose-400 mt-1">2,999,744</div>
-        <div class="text-xs text-rose-300/80 font-mono mt-1">m_axis_tuser_drop = 1 (10.0 ns)</div>
+
+      <div id="kpi-card-3" class="panel-anthracite rounded-xl p-4">
+        <div class="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Cut-Through Drops</div>
+        <div id="m-drops" class="text-2xl font-mono-tech font-extrabold text-[#FF3366] mt-1">2,999,744</div>
+        <div class="text-xs font-mono-tech text-zinc-400 mt-1">m_axis_tuser_drop = <span class="text-[#FF3366] font-bold">1</span></div>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div class="text-xs text-slate-400 uppercase tracking-wider">Disparos GPUDirect FFT</div>
-        <div id="m-gpu" class="text-2xl font-mono font-bold text-indigo-400 mt-1">256</div>
-        <div class="text-xs text-slate-400 mt-1">convergencia en 0.0256% del flujo</div>
+
+      <div id="kpi-card-4" class="panel-anthracite rounded-xl p-4">
+        <div class="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Inspección GPUDirect FFT</div>
+        <div id="m-gpu" class="text-2xl font-mono-tech font-extrabold text-[#FFB703] mt-1">256</div>
+        <div class="text-xs font-mono-tech text-zinc-400 mt-1">Convergencia: <span class="text-[#FFB703]">0.0256%</span> del flujo</div>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div class="text-xs text-slate-400 uppercase tracking-wider">Registro CSR Hardware</div>
-        <div id="m-csr" class="text-2xl font-mono font-bold text-amber-400 mt-1">1.9000</div>
-        <div id="m-csr-q16" class="text-xs text-slate-400 font-mono mt-1">Q16.16: 124518 (0x0001E666)</div>
+
+      <div id="kpi-card-5" class="panel-anthracite rounded-xl p-4">
+        <div class="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Umbral CSR (Q16.16)</div>
+        <div id="m-csr" class="text-2xl font-mono-tech font-extrabold text-[#D4AF37] mt-1">1.9000</div>
+        <div id="m-csr-q16" class="text-xs font-mono-tech text-zinc-400 mt-1">REG: 124518 (<span class="text-[#00F0FF]">0x0001E666</span>)</div>
       </div>
     </section>
 
-    <!-- Main 3-Vertex Visualization -->
+    <!-- Main 3-Vertex Tactical Grid -->
     <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <!-- Vertex I & II: FPGA Pipeline + GPU FFT-16 -->
-      <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <!-- VÉRTICE II: GPU FFT-16 Spectral Brain -->
+      <div id="vertex2-card" class="lg:col-span-7 panel-anthracite glow-cyan rounded-2xl p-6 flex flex-col justify-between space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#2A2A35] pb-4">
           <div>
-            <h2 class="text-base font-bold text-white">Vértice II: Analizador Espectral GPU Radix-2 FFT-16</h2>
-            <p class="text-xs text-slate-400">Densidad Espectral de Potencia (PSD) en tiempo real sobre la "Zona Gris" de entropía</p>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#00F0FF] shadow-[0_0_8px_#00F0FF]"></span>
+              <h2 class="text-base font-bold text-white tracking-wide">VÉRTICE II · ANALIZADOR ESPECTRAL GPU RADIX-2 FFT-16</h2>
+            </div>
+            <p class="text-xs text-zinc-400 mt-1">
+              Transformada Rápida de Fourier In-Register sobre la "Zona Gris" · Caza de Botnets Periódicas en Frecuencia de Nyquist (<span class="font-mono-tech text-[#FFB703] font-semibold">Bin #8</span>)
+            </p>
           </div>
-          <span id="spec-status" class="px-3 py-1 rounded-md text-xs font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            DOMINANCIA ARMÓNICA: 11.2% (NORMAL)
+          <span id="spec-status" class="px-3 py-1 rounded-md text-xs font-mono-tech font-bold bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/40">
+            ESPECTRO LIMPIO · PSD NOMINAL (11.2%)
           </span>
         </div>
 
-        <!-- 16 FFT Bars -->
-        <div id="spectrum-grid" class="grid grid-cols-16 gap-2 items-end h-48 pt-6 pb-2 px-2 bg-slate-950/70 rounded-xl border border-slate-800/80" style="display:grid; grid-template-columns: repeat(16, minmax(0, 1fr));"></div>
-
-        <!-- Manual CSR Override Slider (Simulating tzanix_ctl) -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div class="text-xs font-semibold text-slate-300">Control Manual CSR en Caliente (<code class="text-indigo-400">tzanix_ctl set-threshold</code>)</div>
-            <div class="text-xs text-slate-400">Ajusta el registro <code class="text-amber-400">csr_drop_threshold_q16</code> directamente en la FPGA y propaga por RDMA:</div>
+        <!-- 16-Bin Gradient Spectrum Visualizer -->
+        <div class="relative bg-[#08080A] border border-[#2A2A35] rounded-xl p-4 pt-8">
+          <div class="absolute top-2.5 left-4 right-4 flex justify-between text-xs font-mono-tech text-zinc-500">
+            <span>PSD ENERGY (dB / Q16.16)</span>
+            <span id="nyquist-callout" class="text-[#FFB703] font-bold">★ BIN #8: FRECUENCIA DE NYQUIST</span>
           </div>
-          <div class="flex items-center gap-3">
-            <input id="csr-slider" type="range" min="1.00" max="3.80" step="0.02" value="1.90" oninput="manualCsr(this.value)" class="w-40 accent-amber-500 cursor-pointer" />
-            <span id="slider-val" class="font-mono text-sm font-bold text-amber-400 w-16">1.9000</span>
+          <div id="spectrum-grid" class="h-48 items-end gap-2 pt-4" style="display:grid; grid-template-columns: repeat(16, minmax(0, 1fr));"></div>
+        </div>
+
+        <!-- Metallic CSR Hardware Register Slider -->
+        <div class="bg-[#0B0B0F] border border-[#2A2A35] rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+          <div class="space-y-0.5">
+            <div class="text-xs font-bold text-white flex items-center gap-2">
+              <span>CALIBRADOR MANUAL CSR EN CALIENTE</span>
+              <code class="text-xs font-mono-tech px-2 py-0.5 rounded bg-[#141419] text-[#00F0FF] border border-[#2A2A35]">tzanix_ctl set-threshold</code>
+            </div>
+            <div class="text-xs text-zinc-400">
+              Modifica sin bloqueo el registro <code class="font-mono-tech text-[#D4AF37]">csr_drop_threshold_q16</code> en la FPGA y propaga por RDMA:
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <input id="csr-slider" type="range" min="1.00" max="3.80" step="0.02" value="1.90" oninput="manualCsr(this.value)" class="w-44 metallic-slider" />
+            <div class="bg-[#141419] border border-[#D4AF37]/60 rounded-lg px-3 py-1.5 text-right shadow-[0_0_12px_rgba(212,175,55,0.2)]">
+              <span id="slider-val" class="font-mono-tech text-base font-extrabold text-[#FFB703]">1.9000</span>
+              <div id="slider-q16" class="font-mono-tech text-xs text-zinc-400">124518 Q16</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Vertex III: 8-Node RDMA RoCEv2 Cluster Mesh -->
-      <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <!-- VÉRTICE III: 8-Node RDMA RoCEv2 Mesh + Matrix Terminal -->
+      <div id="vertex3-card" class="lg:col-span-5 panel-anthracite rounded-2xl p-6 flex flex-col justify-between space-y-5">
+        <div class="flex items-center justify-between border-b border-[#2A2A35] pb-4">
           <div>
-            <h2 class="text-base font-bold text-white">Vértice III: Malla Distribuida RDMA RoCEv2</h2>
-            <p class="text-xs text-slate-400">Sincronización Zero-CPU (<code class="text-indigo-400">RDMA_WRITE</code> 32 Bytes) en 8 Nodos BlueField DPU</p>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#00FF66] shadow-[0_0_8px_#00FF66]"></span>
+              <h2 class="text-base font-bold text-white tracking-wide">VÉRTICE III · MALLA RDMA RoCEv2 (8 NODOS)</h2>
+            </div>
+            <p class="text-xs text-zinc-400 mt-1">
+              Inmunidad Colectiva Zero-CPU (<code class="font-mono-tech text-[#00F0FF]">RDMA_WRITE 32B</code>) en microsegundos
+            </p>
           </div>
-          <span id="mesh-epoch" class="text-xs font-mono text-indigo-400 font-semibold">Época #5,342,026</span>
+          <span id="mesh-epoch" class="px-2.5 py-1 rounded bg-[#00F0FF]/10 border border-[#00F0FF]/30 text-xs font-mono-tech text-[#00F0FF] font-bold">
+            ÉPOCA #5,342,026
+          </span>
         </div>
 
+        <!-- 8 DPU Nodes with Expanding Heartbeat Pulse Rings -->
         <div id="mesh-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
 
-        <!-- Live SOC Audit Log -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5 font-mono text-xs">
-          <div class="text-slate-400 font-semibold border-b border-slate-800 pb-1">Bitácora Determinista del Silicio (Tiempo Real)</div>
-          <div id="audit-log" class="space-y-1 text-slate-300 max-h-28 overflow-y-auto"></div>
+        <!-- Matrix-Style SOC Terminal Log -->
+        <div class="matrix-terminal rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between border-b border-[#00F0FF]/20 pb-1.5">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-[#00F0FF] animate-ping"></span>
+              <span class="font-mono-tech text-xs font-bold text-[#00F0FF] tracking-wider">SOC SILICON AUDIT STREAM // RDMA &amp; FPGA</span>
+            </div>
+            <span class="font-mono-tech text-xs text-zinc-500">400 MHz LOCK</span>
+          </div>
+          <div id="audit-log" class="space-y-1.5 font-mono-tech text-xs max-h-36 overflow-y-auto pr-1"></div>
         </div>
       </div>
     </section>
@@ -135,13 +263,18 @@
     const meshGrid = document.getElementById('mesh-grid');
     const auditLog = document.getElementById('audit-log');
 
-    function pushLog(msg, colorClass = 'text-slate-300') {
+    function pushLog(tag, msg, type = 'info') {
       const now = new Date().toISOString().split('T')[1].slice(0, 12);
       const line = document.createElement('div');
-      line.className = colorClass;
-      line.textContent = `[${now}] ${msg}`;
+      let colorHex = '#F8FAFC'; // Blanco para info
+      if (type === 'legit') colorHex = '#00FF66';   // Verde esmeralda neón para tráfico legítimo
+      if (type === 'drop')  colorHex = '#FF3366';   // Rojo láser para descartes de hardware
+      if (type === 'gpu')   colorHex = '#FFB703';   // Amarillo/Oro para alertas de la GPU
+
+      line.style.color = colorHex;
+      line.innerHTML = `<span class="text-zinc-500">[${now}]</span> <strong class="tracking-wide">[${tag}]</strong> ${msg}`;
       auditLog.prepend(line);
-      while (auditLog.children.length > 6) {
+      while (auditLog.children.length > 7) {
         auditLog.removeChild(auditLog.lastChild);
       }
     }
@@ -150,14 +283,14 @@
       specGrid.innerHTML = '';
       for (let i = 0; i < 16; i++) {
         const col = document.createElement('div');
-        col.className = 'flex flex-col items-center justify-end h-full gap-1';
+        col.className = 'flex flex-col items-center justify-end h-full gap-1.5';
         const bar = document.createElement('div');
         bar.id = 'sbar-' + i;
-        bar.className = 'w-full rounded-t transition-all duration-300 bg-emerald-500/70';
-        bar.style.height = '20%';
+        bar.className = 'w-full rounded-t transition-all duration-300 bar-cyan-grad';
+        bar.style.height = '22%';
         const lbl = document.createElement('span');
-        lbl.className = 'text-xs font-mono ' + (i === 8 ? 'text-amber-400 font-bold' : 'text-slate-400');
-        lbl.textContent = i === 8 ? 'B8*' : 'B' + i;
+        lbl.className = 'text-xs font-mono-tech ' + (i === 8 ? 'text-[#FFB703] font-extrabold' : 'text-zinc-400');
+        lbl.textContent = i === 8 ? 'B8★' : 'B' + i;
         col.appendChild(bar);
         col.appendChild(lbl);
         specGrid.appendChild(col);
@@ -167,58 +300,75 @@
       for (let n = 1; n <= 8; n++) {
         const card = document.createElement('div');
         card.id = 'mnode-' + n;
-        card.className = 'bg-slate-950 border border-emerald-500/40 rounded-xl p-3 space-y-1 transition-all duration-300';
+        card.className = 'relative bg-[#0B0B10] border border-[#00FF66]/40 rounded-xl p-3 space-y-1 transition-all duration-300 shadow-[0_0_12px_rgba(0,255,102,0.08)]';
         card.innerHTML = `
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold font-mono text-white">NODO-0${n}</span>
-            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="text-xs font-bold font-mono-tech text-white">NODO-0${n}</span>
+            <span class="relative flex h-2.5 w-2.5">
+              <span id="pulse-ring-${n}" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00FF66] opacity-75"></span>
+              <span id="pulse-dot-${n}" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00FF66]"></span>
+            </span>
           </div>
-          <div id="mnode-csr-${n}" class="text-sm font-mono font-bold text-emerald-400">CSR: 1.9000</div>
-          <div class="text-xs font-mono text-slate-400">CRC32: OK</div>
+          <div id="mnode-csr-${n}" class="text-sm font-mono-tech font-extrabold text-[#00F0FF]">CSR: 1.9000</div>
+          <div class="text-xs font-mono-tech text-zinc-400">RDMA: <span class="text-[#00FF66]">SYNC</span></div>
         `;
         meshGrid.appendChild(card);
       }
 
-      pushLog('Pipeline FPGA Q16.16 sincronizado @ 400 MHz (10.0 ns Cut-Through).', 'text-emerald-400');
-      pushLog('Malla RDMA RoCEv2 activa en 8 nodos BlueField DPU.', 'text-indigo-400');
+      pushLog('SYS-BOOT', 'Pipeline FPGA Q16.16 en línea @ 400 MHz (Latencia determinista: 10.0 ns).', 'info');
+      pushLog('RDMA-MESH', '8 Nodos BlueField DPU sincronizados vía RoCEv2 (Descriptor 32B).', 'legit');
     }
 
     function updateVisuals() {
       const q16 = Math.round(csr * 65536);
+      const hexStr = '0x000' + q16.toString(16).toUpperCase();
       document.getElementById('m-forwards').textContent = forwards.toLocaleString('en-US');
       document.getElementById('m-drops').textContent = drops.toLocaleString('en-US');
       document.getElementById('m-gpu').textContent = gpuTriggers.toLocaleString('en-US');
       document.getElementById('m-csr').textContent = csr.toFixed(4);
-      document.getElementById('m-csr-q16').textContent = `Q16.16: ${q16} (0x000${q16.toString(16).toUpperCase()})`;
-      document.getElementById('mesh-epoch').textContent = 'Época #' + epoch.toLocaleString('en-US');
+      document.getElementById('m-csr-q16').innerHTML = `REG: ${q16} (<span class="text-[#00F0FF]">${hexStr}</span>)`;
+      document.getElementById('mesh-epoch').textContent = 'ÉPOCA #' + epoch.toLocaleString('en-US');
       document.getElementById('csr-slider').value = csr;
       document.getElementById('slider-val').textContent = csr.toFixed(4);
+      document.getElementById('slider-q16').textContent = q16 + ' Q16';
 
       for (let n = 1; n <= 8; n++) {
         const cEl = document.getElementById('mnode-csr-' + n);
         const card = document.getElementById('mnode-' + n);
+        const ring = document.getElementById('pulse-ring-' + n);
+        const dot = document.getElementById('pulse-dot-' + n);
         cEl.textContent = 'CSR: ' + csr.toFixed(4);
+
         if (csr >= 3.0) {
-          card.className = 'bg-amber-500/10 border border-amber-500/50 rounded-xl p-3 space-y-1 transition-all duration-300';
-          cEl.className = 'text-sm font-mono font-bold text-amber-400';
+          card.className = 'relative bg-[#161208] border border-[#D4AF37] rounded-xl p-3 space-y-1 transition-all duration-300 shadow-[0_0_18px_rgba(212,175,55,0.28)]';
+          cEl.className = 'text-sm font-mono-tech font-extrabold text-[#FFB703]';
+          ring.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB703] opacity-80';
+          dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-[#FFB703]';
+        } else if (scenario === 'ddos') {
+          card.className = 'relative bg-[#180910] border border-[#FF3366]/80 rounded-xl p-3 space-y-1 transition-all duration-300 shadow-[0_0_18px_rgba(255,51,102,0.25)]';
+          cEl.className = 'text-sm font-mono-tech font-extrabold text-[#FF3366]';
+          ring.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF3366] opacity-80';
+          dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-[#FF3366]';
         } else {
-          card.className = 'bg-slate-950 border border-emerald-500/40 rounded-xl p-3 space-y-1 transition-all duration-300';
-          cEl.className = 'text-sm font-mono font-bold text-emerald-400';
+          card.className = 'relative bg-[#0B0B10] border border-[#00FF66]/40 rounded-xl p-3 space-y-1 transition-all duration-300 shadow-[0_0_12px_rgba(0,255,102,0.08)]';
+          cEl.className = 'text-sm font-mono-tech font-extrabold text-[#00F0FF]';
+          ring.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00FF66] opacity-75';
+          dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00FF66]';
         }
       }
 
       for (let i = 0; i < 16; i++) {
         const bar = document.getElementById('sbar-' + i);
-        let h = 16;
+        let h = 18;
         if (scenario === 'normal') {
-          h = 12 + Math.floor(Math.random() * 22);
-          bar.className = 'w-full rounded-t transition-all duration-200 bg-emerald-500/70';
+          h = 14 + Math.floor(Math.random() * 22);
+          bar.className = 'w-full rounded-t transition-all duration-200 bar-cyan-grad';
         } else if (scenario === 'ddos') {
-          h = i === 0 ? 94 : 6 + Math.floor(Math.random() * 8);
-          bar.className = 'w-full rounded-t transition-all duration-200 ' + (i === 0 ? 'bg-rose-500' : 'bg-rose-500/30');
+          h = i === 0 ? 95 : 5 + Math.floor(Math.random() * 7);
+          bar.className = 'w-full rounded-t transition-all duration-200 ' + (i === 0 ? 'bar-red-laser' : 'bar-cyan-grad opacity-35');
         } else if (scenario === 'stealth') {
-          h = (i === 8 || i === 4 || i === 12) ? (i === 8 ? 96 : 65) : 10 + Math.floor(Math.random() * 12);
-          bar.className = 'w-full rounded-t transition-all duration-200 ' + (i === 8 ? 'bg-amber-400 animate-pulse' : 'bg-indigo-500/60');
+          h = (i === 8 || i === 4 || i === 12) ? (i === 8 ? 97 : 66) : 10 + Math.floor(Math.random() * 10);
+          bar.className = 'w-full rounded-t transition-all duration-200 ' + ((i === 8 || i === 4 || i === 12) ? 'bar-gold-fire' : 'bar-cyan-grad opacity-60');
         }
         bar.style.height = h + '%';
       }
@@ -239,7 +389,8 @@
           gpuTriggers = data.gpu_fft_triggers;
           csr = data.csr_drop_float;
           epoch = data.rdma_epoch;
-          pushLog(`[TOKIO RUST ENGINE] ${data.last_verdict}`, 'text-indigo-300 font-semibold');
+          const logType = modeStr === 'ddos' ? 'drop' : (modeStr === 'stealth' || modeStr === 'avalanche' ? 'gpu' : 'legit');
+          pushLog('TOKIO-CORE', data.last_verdict, logType);
           updateVisuals();
         }
       } catch (_e) {}
@@ -248,22 +399,45 @@
     function setScenario(sc) {
       scenario = sc;
       const specStatus = document.getElementById('spec-status');
+      const v2Card = document.getElementById('vertex2-card');
+      const kpi3 = document.getElementById('kpi-card-3');
+      const kpi4 = document.getElementById('kpi-card-4');
+      const kpi5 = document.getElementById('kpi-card-5');
+
+      const btnBase = 'px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#2A2A35] bg-[#141419] text-zinc-300 transition';
+      document.getElementById('sc-normal').className = btnBase;
+      document.getElementById('sc-ddos').className = btnBase;
+      document.getElementById('sc-stealth').className = btnBase;
+
+      kpi3.className = 'panel-anthracite rounded-xl p-4';
+      kpi4.className = 'panel-anthracite rounded-xl p-4';
+      kpi5.className = 'panel-anthracite rounded-xl p-4';
+
       if (sc === 'normal') {
         csr = 1.9000;
-        specStatus.className = 'px-3 py-1 rounded-md text-xs font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
-        specStatus.textContent = 'DOMINANCIA ARMÓNICA: 11.2% (NORMAL)';
-        pushLog('Modo Tráfico Nominal activo: H(s) ≈ 3.92 bits -> Fast-Path Forward.', 'text-emerald-400');
+        document.getElementById('sc-normal').className = 'px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#00FF66]/60 bg-[#00FF66]/15 text-[#00FF66] shadow-[0_0_15px_rgba(0,255,102,0.25)] transition';
+        v2Card.className = 'lg:col-span-7 panel-anthracite glow-cyan rounded-2xl p-6 flex flex-col justify-between space-y-5';
+        specStatus.className = 'px-3 py-1 rounded-md text-xs font-mono-tech font-bold bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/40';
+        specStatus.textContent = 'ESPECTRO LIMPIO · PSD NOMINAL (11.2%)';
+        pushLog('FAST-PATH', 'Flujo transaccional legítimo verificado (H = 3.9420 bits) -> Forward en 10.0 ns.', 'legit');
       } else if (sc === 'ddos') {
         csr = 1.9000;
-        specStatus.className = 'px-3 py-1 rounded-md text-xs font-mono font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30';
-        specStatus.textContent = 'COLAPSO DE ENTROPÍA H(s) = 0.08 -> CUT-THROUGH DROP';
-        pushLog('ALERTA FPGA Stage 4: Ráfaga DDoS detectada (H < 1.90). Abortando tramas en 10.0 ns.', 'text-rose-400');
+        document.getElementById('sc-ddos').className = 'px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#FF3366] bg-[#FF3366]/15 text-[#FF3366] shadow-[0_0_18px_rgba(255,51,102,0.3)] transition';
+        v2Card.className = 'lg:col-span-7 panel-anthracite glow-laser-red rounded-2xl p-6 flex flex-col justify-between space-y-5';
+        kpi3.className = 'panel-anthracite glow-laser-red rounded-xl p-4';
+        specStatus.className = 'px-3 py-1 rounded-md text-xs font-mono-tech font-bold bg-[#FF3366]/15 text-[#FF3366] border border-[#FF3366]/50';
+        specStatus.textContent = 'COLAPSO ENTRÓPICO (H = 0.08) -> CUT-THROUGH DROP';
+        pushLog('FPGA-DROP', 'Ataque volumétrico DDoS detectado en Etapa 4. Trama abortada en el MAC en 10.0 ns.', 'drop');
       } else if (sc === 'stealth') {
         csr = 3.5200;
-        specStatus.className = 'px-3 py-1 rounded-md text-xs font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40';
-        specStatus.textContent = '¡ATAQUE PERIÓDICO NYQUIST (BIN #8 = 78.4%) CAZADO!';
-        pushLog('GPU FFT-16: Firma armónica detectada en Bin #8 tras 256 muestras.', 'text-amber-400');
-        pushLog('Auto-Hardening CSR: Umbral elevado de 1.9000 -> 3.5200 y replicado vía RDMA.', 'text-indigo-400');
+        document.getElementById('sc-stealth').className = 'px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#D4AF37] bg-[#D4AF37]/20 text-[#FFB703] shadow-[0_0_20px_rgba(212,175,55,0.35)] transition';
+        v2Card.className = 'lg:col-span-7 panel-anthracite glow-gold rounded-2xl p-6 flex flex-col justify-between space-y-5';
+        kpi4.className = 'panel-anthracite glow-gold rounded-xl p-4';
+        kpi5.className = 'panel-anthracite glow-gold rounded-xl p-4';
+        specStatus.className = 'px-3 py-1 rounded-md text-xs font-mono-tech font-bold bg-[#FFB703]/20 text-[#FFB703] border border-[#D4AF37] shadow-[0_0_15px_rgba(212,175,55,0.4)]';
+        specStatus.textContent = '★ CAPTURA GPU: ARMÓNICO NYQUIST BIN #8 = 78.4%';
+        pushLog('GPU-FFT16', 'Anomalía periódica detectada en Zona Gris (Bin #8 Nyquist = 78.4% PSD).', 'gpu');
+        pushLog('CSR-AUTO', 'Auto-Hardening ejecutado: CSR elevado de 1.9000 -> 3.5200 en los 8 nodos RDMA.', 'info');
       }
       updateVisuals();
       syncWithTokio(sc);
@@ -272,7 +446,7 @@
     function manualCsr(val) {
       csr = parseFloat(val);
       epoch += 8;
-      pushLog(`CLI tzanix_ctl override: CSR ajustado manualmente a ${csr.toFixed(4)} en los 8 nodos.`, 'text-amber-300');
+      pushLog('CLI-CSR', `Override manual tzanix_ctl: CSR = ${csr.toFixed(4)} replicado vía RoCEv2.`, 'gpu');
       updateVisuals();
       syncWithTokio(scenario, csr);
     }
@@ -283,7 +457,8 @@
       drops = 2999744;
       gpuTriggers = 256;
       epoch = 5342026;
-      pushLog('CERTIFICACIÓN 10M FLITS (593.07 ms): 7.0M Forwards (100% legítimo) | 2,999,744 Drops.', 'text-emerald-300');
+      pushLog('AVALANCHE', '10,000,000 Flits procesados en 593.07 ms (16.86 Mpps) · 0% Falsos Positivos.', 'legit');
+      pushLog('FPGA-DROP', '2,999,744 paquetes maliciosos destruidos en Cut-Through tras cierre CSR.', 'drop');
       updateVisuals();
       syncWithTokio('avalanche');
     }
@@ -293,11 +468,11 @@
       if (scenario === 'normal') {
         forwards += Math.floor(Math.random() * 1900);
       } else if (scenario === 'ddos') {
-        drops += Math.floor(Math.random() * 6200);
+        drops += Math.floor(Math.random() * 6400);
         epoch += 16;
       } else {
         forwards += Math.floor(Math.random() * 1100);
-        drops += Math.floor(Math.random() * 3800);
+        drops += Math.floor(Math.random() * 3900);
         epoch += 32;
       }
       updateVisuals();
