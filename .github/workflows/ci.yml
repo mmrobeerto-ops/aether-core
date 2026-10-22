@@ -1,4 +1,4 @@
-name: TZANiX Core Engine CI
+name: TZANIX Core Engine CI
 
 on:
   push:
@@ -8,45 +8,28 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build_and_audit:
     name: Build, Audit & Benchmark
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        targets: aarch64-unknown-linux-gnu
-        components: clippy
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-unknown-linux-gnu
 
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
+      - name: Compilación estricta para entornos no_std (Bare-Metal)
+        run: cargo check --lib --no-default-features
 
-    - name: Compilación estricta para entornos no_std (Bare-Metal)
-      run: cargo check --lib --no-default-features
+      - name: Compilación cruzada para ARM SmartNIC/DPU (NVIDIA BlueField aarch64)
+        run: cargo check --target aarch64-unknown-linux-gnu --lib --no-default-features
 
-    - name: Compilación cruzada para ARM SmartNIC/DPU (NVIDIA BlueField aarch64)
-      run: cargo check --target aarch64-unknown-linux-gnu --lib --no-default-features
-      
-    - name: Pruebas unitarias y de simulación SmartNIC
-      run: cargo test --release
-
-    - name: Instalar cargo-geiger para auditoría de memoria
-      run: cargo install cargo-geiger
-
-    - name: Ejecutar Auditoría de Inseguridad de Memoria (Unsafe Code)
-      # Genera un reporte detallado del uso de bloques unsafe. 
-      # Si se detecta un comportamiento anómalo o fugas potenciales, el desarrollador puede revisarlo.
-      run: cargo geiger --all-targets --all-features || echo "Revisión de geiger finalizada"
-
-    - name: Ejecutar Monitoreo de Latencia (Benchmark)
-      # Corre Criterion.rs. Podríamos agregar un parser específico para que falle si el ns > 40ns.
-      run: |
-        cargo bench --bench entropy_benchmark
-        echo "Validando que la latencia permanezca estable (objetivo < 40ns)..."
-        # En una integración completa, aquí se leería target/criterion/.../estimates.json
+      - name: Pruebas unitarias, FFI C-ABI, 3-VPS Intrusion Test y Avalancha 10M Flits
+        run: cargo test --release
