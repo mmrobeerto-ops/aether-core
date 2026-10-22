@@ -137,7 +137,7 @@ fn test_realistic_vps_centos_medical_api_defense() {
     println!("  * Tiempo Total de Ejecución en CPU     : {:.2} ms", elapsed.as_secs_f64() * 1000.0);
     println!("  * Latencia Media por Paquete (VPS SW)  : {:.2} ns/flit ({:.2} Mpps | {:.2} Gbps)", ns_per_flit, mpps, gbps);
     println!("--------------------------------------------------------------------------------");
-    println!("  1. TRÁFICO LEGÍTIMO (API Médica / HTTPS TLS 1.3 - 189.203.44.12):");
+    println!("  1. TRÁFICO LEGÍTIMO (API Empresarial / Web HTTPS TLS 1.3 - 189.203.44.12):");
     println!("     - Peticiones Evaluadas : 700,000 | Permitidas : {} (100.00%)", legitimate_allowed);
     println!("     - Falsos Positivos     : {} (0.00% - Cero interrupción a usuarios reales)", false_positives);
     println!("  2. ATAQUE VOLUMÉTRICO L4 (SYN-Flood desde 45.155.205.233 - RU AS49505):");
