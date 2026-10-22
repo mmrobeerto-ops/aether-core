@@ -95,7 +95,7 @@ fn test_trident_concurrent_avalanche_10m_flits() {
                 }
                 fft_batches_processed += 1;
             } else {
-                core::hint::spin_loop();
+                thread::yield_now();
             }
         }
         (fft_batches_processed, periodic_attacks_caught)
@@ -149,7 +149,7 @@ fn test_trident_concurrent_avalanche_10m_flits() {
                     .rdma_broadcasts_verified
                     .fetch_add(CLUSTER_NODES as u64, Ordering::Relaxed);
             }
-            core::hint::spin_loop();
+            thread::yield_now();
         }
         sync_operations
     });
