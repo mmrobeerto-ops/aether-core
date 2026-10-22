@@ -105,6 +105,14 @@ EOF
 chmod +x /usr/local/bin/tzanix-status
 echo "[3/5] Hook de mitigación (${FIREWALL_BACKEND}) y comando 'tzanix-status' instalados."
 
+# Descarga automática del binario estático compilado (musl + strip=symbols)
+RELEASE_URL="https://github.com/mmrobeerto-ops/eather-core/releases/download/v1.0.0-silicon/tzanix-aether-core-linux-x86_64"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "${RELEASE_URL}" -o "${BIN_PATH}" 2>/dev/null && chmod +x "${BIN_PATH}" || true
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO "${BIN_PATH}" "${RELEASE_URL}" 2>/dev/null && chmod +x "${BIN_PATH}" || true
+fi
+
 # 5. Configuración de variables de entorno y unidad systemd nativa
 cat << EOF > "${INSTALL_DIR}/tzanix.env"
 TZANIX_LICENSE_KEY=${TZANIX_LICENSE_KEY}

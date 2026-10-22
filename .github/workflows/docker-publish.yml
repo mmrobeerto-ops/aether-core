@@ -1,4 +1,4 @@
-name: Publish Zero-Source Docker Image (GHCR)
+name: Publish Zero-Source Docker Image & Static Linux Binary
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -36,3 +36,24 @@ jobs:
           tags: |
             ghcr.io/mmrobeerto-ops/tzanix-aether-core:latest
             ghcr.io/mmrobeerto-ops/tzanix-aether-core:${{ github.sha }}
+
+      - name: Extract stripped static musl binary from container
+        run: |
+          docker pull ghcr.io/mmrobeerto-ops/tzanix-aether-core:latest
+          CID=$(docker create ghcr.io/mmrobeerto-ops/tzanix-aether-core:latest)
+          docker cp "$CID:/app/tzanix-aether-core" ./tzanix-aether-core-linux-x86_64
+          docker rm "$CID"
+          chmod +x ./tzanix-aether-core-linux-x86_64
+
+      - name: Publish Static Binary to GitHub Releases (v1.0.0-silicon)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-silicon
+          name: "TZANIX Aether-Core Static Linux Binary (musl Zero-Deps)"
+          body: "Binario estático compilado con musl y strip=symbols (Sin código fuente) para CentOS / AlmaLinux / Ubuntu."
+          files: |
+            ./tzanix-aether-core-linux-x86_64
+            ./deploy/install-tzanix-linux.sh
+            ./docker-compose.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
