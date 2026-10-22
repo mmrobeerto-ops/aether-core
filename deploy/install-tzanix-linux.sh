@@ -66,10 +66,14 @@ cat << 'EOF' > "${FIREWALL_HOOK}"
 ATTACKER_IP="${1:-}"
 REASON="${2:-TZANIX-Aether-Core-Anomaly-Block}"
 TTL_SECONDS="${3:-3600}"
+TIMESTAMP_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 if [ -z "${ATTACKER_IP}" ]; then
   exit 0
 fi
+
+# Registro forense persistente en el servidor del cliente
+echo "[${TIMESTAMP_UTC}] IP_ATACANTE=${ATTACKER_IP} | VECTOR=${REASON} | TTL=${TTL_SECONDS}s | ACCION=BLOQUEADO" >> /opt/tzanix-aether/logs/threats.log
 
 if command -v csf >/dev/null 2>&1; then
   # Integración nativa con CSF/LFD en CentOS / AlmaLinux / cPanel / Hostinger
@@ -79,7 +83,27 @@ elif command -v iptables >/dev/null 2>&1; then
 fi
 EOF
 chmod +x "${FIREWALL_HOOK}"
-echo "[3/5] Hook de mitigación automática configurado para backend: ${FIREWALL_BACKEND}"
+
+# Crear comando CLI 'tzanix-status' para que el administrador vea en SSH quién intenta atacarlos
+cat << 'EOF' > /usr/local/bin/tzanix-status
+#!/usr/bin/env bash
+echo "=============================================================================="
+echo "  TZANIX ÆTHER-CORE // REPORTE FORENSE DE AMENAZAS EN ESTE SERVIDOR"
+echo "=============================================================================="
+echo "  Consola Web SOC en Vivo : http://$(hostname -I | awk '{print $1}'):8000"
+echo "  Reporte JSON Forense    : http://127.0.0.1:8000/api/v1/forensic-report"
+echo "------------------------------------------------------------------------------"
+echo "  ÚLTIMAS IPs ATACANTES INTERCEPTADAS (/opt/tzanix-aether/logs/threats.log):"
+echo "------------------------------------------------------------------------------"
+if [ -f /opt/tzanix-aether/logs/threats.log ]; then
+  tail -n 20 /opt/tzanix-aether/logs/threats.log
+else
+  echo "  [Sin ataques registrados aún]"
+fi
+echo "=============================================================================="
+EOF
+chmod +x /usr/local/bin/tzanix-status
+echo "[3/5] Hook de mitigación (${FIREWALL_BACKEND}) y comando 'tzanix-status' instalados."
 
 # 5. Configuración de variables de entorno y unidad systemd nativa
 cat << EOF > "${INSTALL_DIR}/tzanix.env"
@@ -108,7 +132,6 @@ ExecStart=${BIN_PATH} server
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
-# Endurecimiento de seguridad systemd
 NoNewPrivileges=false
 ProtectSystem=full
 PrivateTmp=true
@@ -120,9 +143,8 @@ EOF
 echo "[4/5] Unidad systemd registrada en ${SERVICE_FILE}"
 echo "[5/5] Configuración completada exitosamente."
 echo "=============================================================================="
-echo "  RESUMEN DE ARQUITECTURA EN ESTE VPS (${OS_NAME}):"
-echo "  - Sobrecarga de Docker       : 0.0% (Ejecución directa en Kernel/CPU)"
-echo "  - Dependencias dinámicas     : Ninguna (Binario estático inmune a updates OS)"
-echo "  - Latencia por paquete (CPU) : ~59.31 ns/flit (16.86 Mpps por núcleo)"
-echo "  - Integración Firewall       : ${FIREWALL_BACKEND} (${FIREWALL_HOOK})"
+echo "  ¿CÓMO VER QUIÉN INTENTA ATACAR ESTE SERVIDOR?"
+echo "  1. En navegador web : http://$(hostname -I | awk '{print $1}'):8000"
+echo "  2. En terminal SSH  : ejecuta el comando -> tzanix-status"
+echo "  3. Bitácora en vivo : tail -f /opt/tzanix-aether/logs/threats.log"
 echo "=============================================================================="
