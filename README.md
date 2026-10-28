@@ -2,30 +2,31 @@
 
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success) ![License](https://img.shields.io/badge/License-AGPLv3%20%2F%20Commercial-blue) ![Stack](https://img.shields.io/badge/Stack-Rust%20%7C%20mmap%20%7C%20no__std-orange)
 
-**TZANiX-Æther-Core** es el núcleo de cómputo universal de ultra-baja latencia (~19.3 ns ciclo completo / ~55.93 ns cálculo de entropía determinista) de la suite TZANiX. 
+**TZANiX-Æther-Core** es el motor de detección de anomalías de red y análisis de entropía de ultra-baja latencia (~10.0 ns en silicio FPGA / ~55.93 ns en CPU Fast-Path) de la suite TZANiX. 
 
-Este motor ha sido diseñado bajo una abstracción matemática pura basada en la **física de campos de información**, eliminando cualquier acoplamiento con lógicas de negocio. Su propósito es servir como una infraestructura crítica e imponente para procesar señales masivas cuantizadas de alta frecuencia en tiempo real, garantizando **cero asignaciones dinámicas en memoria (no-heap)**, **cero bifurcaciones condicionales (branchless)** en el camino crítico y un **jitter nulo**.
+Este motor ha sido diseñado bajo una arquitectura determinista en punto fijo (`Q16.16`) y tablas de búsqueda alineadas a caché L1, garantizando **cero asignaciones dinámicas en memoria (no-heap)**, **cero bifurcaciones condicionales (branchless)** en el camino crítico y compatibilidad `no_std`.
 
 ---
 
 ## 🏛️ Arquitectura del Motor
 
-El motor está estructurado en tres componentes clave optimizados a nivel de hardware y silicio:
+El motor está estructurado en cuatro componentes principales optimizados a nivel de microarquitectura:
 
-### 1. Motor de Señal Cuántica/Estocástica ([`src/lib.rs`](src/lib.rs))
-*   **Densidad Vectorial Genérica:** Procesa señales a través de dos canales paralelos (`channel_alpha` y `channel_beta`) sobre arrays contiguos de 8 niveles (`DenseSignalSnapshot`).
-*   **Tabla de Búsqueda Vectorizada (L1 Cache-Aligned LUT):** Para evitar la penalización de cruce de dominio (Domain Cross Penalty) en CPUs x86_64 —provocada por la transferencia de registros entre la FPU (XMM/YMM) y la ALU (GPR) al manipular bits de punto flotante—, se utiliza una tabla precalculada estática de Shannon (`SHANNON_LUT`) alineada a 64 bytes.
-*   **Redondeo y Clampeo Branchless:** Mapea la densidad de entrada a la tabla con precisión absoluta mediante suma de redondeo y un límite superior branchless (`core::cmp::min`), manteniendo la desviación matemática por debajo de `1e-2`.
+### 1. Entropía de Ventana sobre Distribución de IPs en Punto Fijo Q16.16 ([`src/window_entropy.rs`](src/window_entropy.rs))
+*   **Señal Primaria de Detección (`WindowEntropy`):** Calcula la entropía de Shannon sobre un histograma de 256 buckets de IPs de origen usando aritmética entera pura en formato `Q16.16` (sin `f64`, sin heap, `no_std`), logrando un error `< 0.001 bits` respecto a IEEE 754 `f64`.
+*   **Detección Bidireccional (`is_anomalous`):** Detecta tanto caídas abruptas de entropía (inundaciones DDoS concentradas desde pocas fuentes) como alzas extremas (ataques volumétricos con IP spoofing masivo).
 
-### 2. Búfer Atómico y Persistencia de Memoria Mapeada ([`src/storage.rs`](src/storage.rs))
+### 2. Motor de Densidad de Señal y LUT Vectorizada ([`src/lib.rs`](src/lib.rs))
+*   **Densidad Vectorial (`DenseSignalSnapshot`):** Procesa señales de 16 canales (`channel_alpha` y `channel_beta`) alineados a 64 bytes (1 flit AXI4-Stream de 512 bits).
+*   **Tabla de Búsqueda Vectorizada (L1 Cache-Aligned LUT):** Para evitar la penalización de cruce de dominio (Domain Cross Penalty) en CPUs x86_64, se utiliza una tabla precalculada estática de Shannon (`SHANNON_LUT`) alineada a 64 bytes y acumuladores seguros en `u64` libres de desbordamiento.
+
+### 3. Búfer Atómico y Persistencia de Memoria Mapeada ([`src/storage.rs`](src/storage.rs))
 *   **UniversalEvent (32 Bytes):** Estructura compacta y alineada para telemetría libre de sobrecarga.
 *   **Circular Ring Buffer SPSC Lock-Free:** Búfer de Productor Único y Consumidor Único (`SpscTelemetryBuffer`) alineado a 64 bytes en memoria para evitar el *False Sharing* entre núcleos de CPU.
-*   **MmapStorage (OS Memory Mapping):** Inicializa y asocia el búfer atómico a un archivo físico persistente en el sistema de archivos del sistema operativo mediante `mmap`, permitiendo auditoría y visualización externa (ej. React UI a 60 FPS) con cero impacto en el hilo de procesamiento crítico.
 
-### 3. Pipeline de Producción y Seguridad de Fallos ([`src/main.rs`](src/main.rs))
-*   **Lazo Crítico (`no_std` / `no_main`):** Diseñado para compilarse en entornos embebidos de misión crítica o sistemas HFT bare-metal.
-*   **Veto Estocástico por Inversión Lineal:** Resuelve condiciones de coherencia en la señal sin operaciones de división (las cuales toman de 15 a 25 ciclos de CPU) convirtiéndolas en multiplicaciones lineales (FMA).
-*   **Panic Handler de Seguridad:** En caso de pánicos, ejecuta un bucle infinito seguro para evitar volcados de memoria lentos o accesos no controlados al kernel.
+### 4. Monitor de Latencia y Seguridad de Fallos ([`src/latency_watchdog.rs`](src/latency_watchdog.rs))
+*   **Watchdog Interno (`LatencyWatchdog`):** Mide latencia de ejecución interna mediante `Instant` en `std`, `rdtscp` serializado en `x86_64` `no_std` y `cntvct_el0` en `aarch64` `no_std` para detectar sobrecarga (`WatchdogError::ExecutionOverrun`).
+*   **Panic Handler Determinista (`no_std`):** Emite instrucción de trampa de hardware (`ud2` en x86_64, `brk #1` en AArch64) en lugar de colgar el núcleo en un bucle silencioso.
 
 ---
 
