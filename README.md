@@ -1,8 +1,8 @@
 # TZANiX-Æther-Core 🌌
 
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success) ![License](https://img.shields.io/badge/License-AGPLv3%20%2F%20Commercial-blue) ![Stack](https://img.shields.io/badge/Stack-Rust%20%7C%20mmap%20%7C%20no__std-orange)
-
-**TZANiX-Æther-Core** es el motor de detección de anomalías de red y análisis de entropía de ultra-baja latencia (~10.0 ns en silicio FPGA / ~55.93 ns en CPU Fast-Path) de la suite TZANiX. 
+TZANiX-Æther-Core es el motor de detección de anomalías de red y análisis de entropía de distribución IP de ultra-baja latencia (~219 ns por paquete en CPU Fast-Path) de la suite TZANiX.
+​Este motor ha sido diseñado bajo una arquitectura determinista en punto fijo (Q16.16) y tablas de búsqueda optimizadas, garantizando cero asignaciones dinámicas en memoria (no_heap), código libre de bifurcaciones condicionales (branchless) en el camino crítico y compatibilidad no_std.
 
 Este motor ha sido diseñado bajo una arquitectura determinista en punto fijo (`Q16.16`) y tablas de búsqueda alineadas a caché L1, garantizando **cero asignaciones dinámicas en memoria (no-heap)**, **cero bifurcaciones condicionales (branchless)** en el camino crítico y compatibilidad `no_std`.
 
