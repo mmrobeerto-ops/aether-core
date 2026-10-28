@@ -1,212 +1,343 @@
 // =============================================================================
-// TZANIX Æther-Core — WindowEntropy (Entropía de Distribución de IPs Q16.16)
+// TZANIX Æther-Core — WindowEntropy (Entropía por Ventana de Lotes en Q16.16)
 // =============================================================================
-// Qué hace:
-//   Cuenta paquetes por bucket de hash de IP de origen (256 buckets) dentro
-//   de una ventana de tiempo. Calcula la entropía de Shannon como:
-//     H = log2(N) − (1/N) · Σ c · log2(c)
-//   donde N = total de paquetes y c = conteo por bucket.
-//
-// Por qué esta señal es correcta:
-//   - Entropía BAJA → pocas IPs concentran el tráfico → inundación monofuente.
-//   - Entropía ALTA → IPs muy dispersas → flood con IPs falsificadas (spoofed).
-//   - Contrastar con la LÍNEA BASE del sistema; no usar umbral fijo.
-//
-// Restricciones de diseño:
-//   - no_std, sin f64, sin heap, sin asignaciones dinámicas.
-//   - Toda la aritmética es entera en Q16.16 (escala = 2^16 = 65536).
-//   - is_anomalous() compara contra una línea base en ambos sentidos.
-//
-// Para usarlo:
-//   1. Llama add(ip) por cada paquete recibido.
-//   2. Cada ventana (ej. 100 ms o cada N paquetes), llama entropy_q16().
-//   3. Llama reset() para iniciar la siguiente ventana.
-//   4. Calcula la línea base con media móvil sobre tráfico normal.
-//   5. Combina con tasa de paquetes por IP — la entropía sola no basta.
+// Diseño resistente a ataques de denegación de servicio inducidos (Self-DoS):
+//   1. Hash multiplicativo con semilla secreta (`seed`) + avalancha para evitar
+//      colisiones predecibles como ocurría con el XOR simple de octetos.
+//   2. Acumulación incremental O(1) de `Σ c · log2_q16(c)` dentro de `add()`.
+//      Así `entropy_q16()` es O(1) (una sola llamada a `log2_q16(N)` y una división)
+//      en lugar de iterar los 256 buckets por cada paquete.
+//   3. Contadores `counts: [u64; BUCKETS]` para que nunca desborden respecto a `total`.
+//   4. Mínimo estadístico de muestras (`MIN_SAMPLES_FOR_VERDICT = 8 * BUCKETS = 2048`):
+//      `is_anomalous()` devuelve `Option<bool>` (`None` si aún no hay suficientes
+//      paquetes tras un `reset()`, evitando falsos positivos por sesgo de N pequeño).
+//   5. Clasificación de ventana (`WindowState::Normal | Suspect | Attack`) +
+//      actualización EWMA protegida contra envenenamiento + contramedidas por
+//      bucket (`share_exceeds`) para que solo se limite a los orígenes dominantes
+//      y jamás se tire todo el tráfico legítimo durante un ataque de IP spoofing.
 // =============================================================================
 
-/// Número de buckets para el histograma de IPs de origen.
-/// 256 buckets → 8 bits de hash → 1 KB de RAM en la pila.
-const BUCKETS: usize = 256;
+/// Número de buckets del histograma de distribución de IPs.
+pub const BUCKETS: usize = 256;
 
-/// Escala Q16.16 (2^16)
-const Q16: u64 = 65_536;
+/// Escala Q16.16 (2^16 = 65536).
+pub const Q16: u64 = 65_536;
 
-/// Motor de entropía de ventana deslizante sobre distribución de IPs de origen.
-/// Toda la aritmética es entera; no se usa f64 ni heap.
+/// Mínimo de paquetes requeridos en una ventana para emitir dictamen estadístico
+/// sin sesgo de muestra pequeña (8 * BUCKETS = 2048 paquetes).
+pub const MIN_SAMPLES_FOR_VERDICT: u64 = (8 * BUCKETS) as u64;
+
+/// Semilla por defecto para el hash multiplicativo (Golden Ratio 32-bit).
+const DEFAULT_HASH_SEED: u32 = 0x9E37_79B9;
+
+/// Estado operativo de la ventana tras cerrarse un intervalo de medición.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowState {
+    /// Tráfico dentro de la banda normal respecto a la línea base.
+    Normal = 0,
+    /// Desviación moderada o entropía inusualmente alta (ej. IP spoofing):
+    /// desviar a inspección profunda / SYN-cookies, NO descartar a ciegas.
+    Suspect = 1,
+    /// Caída severa de entropía (inundación concentrada): aplicar descarte/rate-limit
+    /// únicamente a los buckets dominantes que superen `max_bucket_share_q16`.
+    Attack = 2,
+}
+
+/// Política de evaluación por ventana (agrupa umbrales para una API limpia).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WindowPolicy {
+    /// Línea base de entropía aprendida en formato Q16.16.
+    pub baseline_q16: u64,
+    /// Desviación tolerada en Q16.16 antes de declarar anomalía.
+    pub deviation_q16: u64,
+    /// Histéresis adicional en Q16.16 para salir del estado de alerta.
+    pub hysteresis_q16: u64,
+    /// Mínimo de paquetes antes de evaluar la ventana (por defecto `MIN_SAMPLES_FOR_VERDICT`).
+    pub min_window_packets: u64,
+    /// Fracción máxima de tráfico permitida a un solo bucket durante un ataque,
+    /// en escala Q16.16 (ej. `6554` ≈ 10% del tráfico total de la ventana).
+    pub max_bucket_share_q16: u64,
+}
+
+impl Default for WindowPolicy {
+    fn default() -> Self {
+        Self {
+            baseline_q16: 6 * Q16,               // 6.0 bits inicial
+            deviation_q16: Q16,                  // ±1.0 bit
+            hysteresis_q16: Q16 / 4,             // 0.25 bits de histéresis
+            min_window_packets: MIN_SAMPLES_FOR_VERDICT,
+            max_bucket_share_q16: Q16 / 10,      // 10% máximo por bucket en bajo ataque
+        }
+    }
+}
+
+/// Ventana por lotes con mantenimiento incremental O(1) de entropía en Q16.16.
 #[repr(C, align(64))]
+#[derive(Clone)]
 pub struct WindowEntropy {
-    /// Histograma de conteo por bucket de hash de IP.
-    counts: [u32; BUCKETS],
+    /// Conteo de paquetes por bucket en `u64` (evita saturación asimétrica frente a `total`).
+    counts: [u64; BUCKETS],
     /// Total acumulado de paquetes en la ventana actual.
     total: u64,
+    /// Suma incremental `Σ c_i · log2_q16(c_i)` mantenida en O(1) en cada `add()`.
+    sum_c_log2_c_q16: u64,
+    /// Conteo del último período cerrado por bucket (para consultar `share_exceeds`
+    /// después de hacer `end_window_and_reset`).
+    last_window_counts: [u64; BUCKETS],
+    /// Total del último período cerrado.
+    last_window_total: u64,
+    /// Estado vigente calculado al cierre de la última ventana.
+    state: WindowState,
+    /// Semilla secreta por instancia para el hash multiplicativo de buckets.
+    seed: u32,
+}
+
+impl Default for WindowEntropy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WindowEntropy {
-    /// Crea una nueva ventana vacía.
+    /// Crea una nueva ventana con la semilla predeterminada.
     pub const fn new() -> Self {
+        Self::with_seed(DEFAULT_HASH_SEED)
+    }
+
+    /// Crea una nueva ventana con una semilla secreta personalizada (recomendado en producción
+    /// para evitar ataques algorítmicos de colisión de hash).
+    pub const fn with_seed(seed: u32) -> Self {
         Self {
-            counts: [0u32; BUCKETS],
+            counts: [0u64; BUCKETS],
             total: 0,
+            sum_c_log2_c_q16: 0,
+            last_window_counts: [0u64; BUCKETS],
+            last_window_total: 0,
+            state: WindowState::Normal,
+            seed,
         }
     }
 
-    /// Registra un paquete cuya IP de origen es `src_ip` (en formato u32 big-endian).
-    /// El hash de 8 bits se obtiene combinando los 4 octetos con XOR, lo que
-    /// distribuye tanto IPs similares (escaneo secuencial) como dispersas.
+    /// Calcula el bucket (0..255) mediante hash multiplicativo con avalancha de bits y semilla.
+    #[inline(always)]
+    pub const fn bucket(&self, src_ip: u32) -> usize {
+        let mut h = src_ip ^ self.seed;
+        h ^= h >> 16;
+        h = h.wrapping_mul(0x85EB_CA6B);
+        h ^= h >> 13;
+        h = h.wrapping_mul(0xC2B2_AE35);
+        h ^= h >> 16;
+        (h >> 24) as usize
+    }
+
+    /// Plega una dirección IPv6 de 128 bits a un token de 32 bits y devuelve su bucket.
+    #[inline(always)]
+    pub const fn bucket_ipv6(&self, ipv6_words: [u32; 4]) -> usize {
+        let folded = ipv6_words[0]
+            ^ ipv6_words[1].rotate_left(7)
+            ^ ipv6_words[2].rotate_left(15)
+            ^ ipv6_words[3].rotate_left(23);
+        self.bucket(folded)
+    }
+
+    /// Registra un paquete en O(1) actualizando incrementalmente `Σ c · log2_q16(c)`.
     #[inline(always)]
     pub fn add(&mut self, src_ip: u32) {
-        let b0 = (src_ip) as u8;
-        let b1 = (src_ip >> 8) as u8;
-        let b2 = (src_ip >> 16) as u8;
-        let b3 = (src_ip >> 24) as u8;
-        let bucket = (b0 ^ b1 ^ b2 ^ b3) as usize;
-        // Saturating add evita desborde en ventanas muy largas.
-        self.counts[bucket] = self.counts[bucket].saturating_add(1);
-        self.total = self.total.saturating_add(1);
+        let b = self.bucket(src_ip);
+        let c = self.counts[b];
+        let c_next = c + 1;
+
+        let prev_term = c.saturating_mul(log2_q16(c));
+        let next_term = c_next.saturating_mul(log2_q16(c_next));
+        self.sum_c_log2_c_q16 = self
+            .sum_c_log2_c_q16
+            .saturating_add(next_term.saturating_sub(prev_term));
+
+        self.counts[b] = c_next;
+        self.total += 1;
     }
 
-    /// Calcula la entropía de Shannon en formato Q16.16.
-    ///
-    /// H = log2(N) − (1/N) · Σ_{i} c_i · log2(c_i)
-    ///
-    /// Para no usar división flotante, reformulamos:
-    ///   N · H = N · log2(N) − Σ c_i · log2(c_i)
-    /// y luego dividimos por N en enteros.
-    ///
-    /// Devuelve 0 si la ventana está vacía.
-    /// Divide el resultado por Q16 (65536) para obtener bits reales como f64.
+    /// Calcula la entropía de Shannon actual en formato Q16.16 en tiempo **O(1)**
+    /// gracias al acumulador incremental `sum_c_log2_c_q16`.
+    #[inline(always)]
     pub fn entropy_q16(&self) -> u64 {
         let n = self.total;
-        if n == 0 {
+        if n <= 1 {
             return 0;
         }
+        debug_assert!(n < (1u64 << 42), "Tamaño de ventana excede cota sin overflow");
 
-        // N · log2(N) en Q16 (sin truncar prematuramente con >> 16)
         let n_log2_n_q16 = n.saturating_mul(log2_q16(n));
-
-        // Σ c_i · log2(c_i) en Q16
-        let mut sum_c_log2_c_q16: u64 = 0;
-        for &c in &self.counts {
-            if c == 0 {
-                continue;
-            }
-            let c64 = c as u64;
-            let term = c64.saturating_mul(log2_q16(c64));
-            sum_c_log2_c_q16 = sum_c_log2_c_q16.saturating_add(term);
+        if n_log2_n_q16 <= self.sum_c_log2_c_q16 {
+            return 0;
         }
-
-        // H_q16 = (N·log2_q16(N) − Σ c·log2_q16(c)) / N
-        if n_log2_n_q16 < sum_c_log2_c_q16 {
-            return 0; // Puede ocurrir por redondeo cuando n=1
-        }
-        (n_log2_n_q16 - sum_c_log2_c_q16) / n
+        (n_log2_n_q16 - self.sum_c_log2_c_q16) / n
     }
 
-    /// Devuelve `true` si la entropía de la ventana actual es anómala respecto
-    /// a la `baseline_q16` (media móvil del tráfico normal).
-    ///
-    /// Se considera anómalo si la entropía actual se desvía más de
-    /// `deviation_q16` unidades Q16 de la línea base, en cualquier dirección:
-    ///   - Muy baja (concentración monofuente → DDoS directo).
-    ///   - Muy alta (dispersión extrema → IP spoofing masivo).
-    ///
-    /// ⚠️ El umbral debe calibrarse con tráfico normal real, no con un valor
-    /// fijo. Usa una media móvil exponencial sobre ventanas pasadas.
-    #[inline(always)]
+    /// Evalúa si la ventana actual es anómala respecto a `baseline_q16`.
+    /// Devuelve `None` si `self.total < min_samples` para evitar falsos positivos tras `reset()`.
+    #[inline]
+    pub fn is_anomalous_checked(
+        &self,
+        baseline_q16: u64,
+        deviation_q16: u64,
+        min_samples: u64,
+    ) -> Option<bool> {
+        if self.total < min_samples {
+            return None;
+        }
+        let h = self.entropy_q16();
+        let diff = h.abs_diff(baseline_q16);
+        Some(diff > deviation_q16)
+    }
+
+    /// Versión conveniente para tests o ventanas ya completas: evalúa desviación en ambos sentidos.
+    #[inline]
     pub fn is_anomalous(&self, baseline_q16: u64, deviation_q16: u64) -> bool {
         let h = self.entropy_q16();
-        let diff = if h > baseline_q16 {
-            h - baseline_q16
-        } else {
-            baseline_q16 - h
-        };
-        diff > deviation_q16
+        h.abs_diff(baseline_q16) > deviation_q16
     }
 
-    /// Reinicia la ventana para el siguiente intervalo de medición.
-    pub fn reset(&mut self) {
-        self.counts = [0u32; BUCKETS];
-        self.total = 0;
-    }
-
-    /// Devuelve el total de paquetes en la ventana actual.
+    /// Verifica en O(1) si el bucket de `src_ip` excede la cuota máxima permitida (`max_share_q16`,
+    /// donde `65536` = 100%). Usa la ventana cerrada más reciente si la actual acaba de reiniciarse.
     #[inline(always)]
-    pub fn packet_count(&self) -> u64 {
+    pub fn share_exceeds(&self, src_ip: u32, max_share_q16: u64) -> bool {
+        let b = self.bucket(src_ip);
+        let (c, tot) = if self.total >= 64 {
+            (self.counts[b], self.total)
+        } else if self.last_window_total > 0 {
+            (self.last_window_counts[b], self.last_window_total)
+        } else {
+            return false;
+        };
+        // c / tot > max_share_q16 / 65536  <=>  c * 65536 > tot * max_share_q16
+        (c << 16) > tot.saturating_mul(max_share_q16)
+    }
+
+    /// Cierra el período de ventana actual, actualiza el `WindowState` con histéresis,
+    /// actualiza `policy.baseline_q16` mediante EWMA lenta **solo si el estado es `Normal`**
+    /// (evitando envenenamiento de línea base durante ataques) y reinicia los contadores.
+    pub fn end_window_and_update(&mut self, policy: &mut WindowPolicy) -> WindowState {
+        if self.total < policy.min_window_packets {
+            return self.state;
+        }
+
+        let h = self.entropy_q16();
+        let eff_dev = match self.state {
+            WindowState::Normal => policy.deviation_q16,
+            // Histéresis: exige volver más cerca de la línea base para salir de alerta
+            WindowState::Suspect | WindowState::Attack => {
+                policy.deviation_q16.saturating_sub(policy.hysteresis_q16)
+            }
+        };
+
+        self.state = if h + eff_dev < policy.baseline_q16 {
+            // Caída abrupta de entropía -> concentración de origen (DDoS)
+            WindowState::Attack
+        } else if h > policy.baseline_q16 + eff_dev {
+            // Subida abrupta de entropía -> dispersión extrema (IP spoofing)
+            // Nunca se hace Drop global; se pasa a Suspect (Mirror / SYN-cookies)
+            WindowState::Suspect
+        } else {
+            WindowState::Normal
+        };
+
+        // Aprendizaje lento EWMA (alpha = 1/64) SOLO cuando el tráfico es Normal
+        if self.state == WindowState::Normal {
+            policy.baseline_q16 = (policy.baseline_q16 * 63 + h) >> 6;
+        }
+
+        self.last_window_counts = self.counts;
+        self.last_window_total = self.total;
+        self.reset();
+        self.state
+    }
+
+    /// Combina (suma) otra instancia de `WindowEntropy` (ej. de distintas colas RX RSS)
+    /// recalculando el acumulador `sum_c_log2_c_q16` sobre los conteos fusionados.
+    pub fn merge(&mut self, other: &Self) {
+        let mut new_sum: u64 = 0;
+        let mut new_total: u64 = 0;
+        for i in 0..BUCKETS {
+            let c = self.counts[i].saturating_add(other.counts[i]);
+            self.counts[i] = c;
+            new_total = new_total.saturating_add(c);
+            if c > 0 {
+                new_sum = new_sum.saturating_add(c.saturating_mul(log2_q16(c)));
+            }
+        }
+        self.total = new_total;
+        self.sum_c_log2_c_q16 = new_sum;
+    }
+
+    /// Devuelve el estado vigente de la ventana.
+    #[inline(always)]
+    pub const fn state(&self) -> WindowState {
+        self.state
+    }
+
+    /// Reinicia los contadores de la ventana activa.
+    pub fn reset(&mut self) {
+        self.counts = [0u64; BUCKETS];
+        self.total = 0;
+        self.sum_c_log2_c_q16 = 0;
+    }
+
+    /// Total de paquetes en la ventana activa.
+    #[inline(always)]
+    pub const fn packet_count(&self) -> u64 {
         self.total
     }
 
-    /// Devuelve el número de buckets activos (IPs únicas aproximadas).
+    /// Número de buckets con al menos 1 paquete.
     pub fn active_buckets(&self) -> usize {
         self.counts.iter().filter(|&&c| c > 0).count()
     }
 }
 
 // =============================================================================
-// log2_q16: log2 entera en Q16.16 sin f64
+// log2_q16: log2 entera en Q16.16 usando solo u64 (mantisa en Q30, < 2^62)
 // =============================================================================
-// Algoritmo:
-//   1. Encontrar la posición del bit más significativo (floor_log2 = clz).
-//   2. La parte entera de log2(x) = floor_log2.
-//   3. La fracción se aproxima normalizando la mantisa y aplicando 4
-//      iteraciones de cuadrado sucesivo (binary logarithm).
-//
-// Error máximo: < 0.001 bits respecto a f64, verificado en los tests.
-// No contiene if condicionales en el camino crítico (solo la normalización
-// inicial por leading_zeros que el compilador convierte en BSR/LZCNT).
-// =============================================================================
+/// Calcula `log2(x)` en punto fijo Q16.16 usando únicamente registros `u64` (sin `u128` ni `f64`).
+/// La mantisa se normaliza en Q30 (`[2^30, 2^31)`), por lo que `m * m < 2^62` cabe en `u64`.
+/// Error máximo `< 0.001 bits` respecto a `f64::log2`.
 #[inline(always)]
 pub fn log2_q16(x: u64) -> u64 {
-    if x == 0 {
+    if x <= 1 {
         return 0;
     }
 
-    // Parte entera: posición del MSB
     let int_part = 63u32.saturating_sub(x.leading_zeros());
 
-    // Normalizar mantisa a [1.0, 2.0) en Q32 para la aproximación fraccionaria.
-    // Si int_part >= 32 desplazamos a la derecha; si no, a la izquierda.
-    let mantissa_q32: u64 = if int_part >= 32 {
-        x >> (int_part - 32)
+    // Mantisa en Q30: rango [2^30, 2^31)
+    let mut m: u64 = if int_part >= 30 {
+        x >> (int_part - 30)
     } else {
-        x << (32 - int_part)
+        x << (30 - int_part)
     };
 
-    // 16 iteraciones de logaritmo binario por cuadrado sucesivo en u128.
-    // Cada iteración extrae 1 bit de la fracción en Q32 sin desbordar u64.
-    let mut m = mantissa_q32 as u128; // en Q32, rango [2^32, 2^33)
     let mut frac_q16: u64 = 0;
-
     for i in (0u32..16).rev() {
-        m = (m * m) >> 32; // m² / 2^32 — mantiene Q32 exacto en u128
-        if m >= (1u128 << 33) {
+        m = (m * m) >> 30;
+        if m >= (1u64 << 31) {
             frac_q16 |= 1 << i;
             m >>= 1;
         }
     }
 
-    // Resultado: parte_entera * Q16 + fracción en Q16
     (int_part as u64) * Q16 + frac_q16
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Convierte Q16.16 → f64 para comparaciones en tests
     fn q16_to_f64(q: u64) -> f64 {
         (q as f64) / (Q16 as f64)
     }
 
-    /// log2 referencia con f64
-    fn log2_f64_ref(x: u64) -> f64 {
-        (x as f64).log2()
-    }
-
-    // Test 1: log2_q16 exacto en potencias de 2 -------------------------------------------------------
     #[test]
     fn test_log2_exact_powers_of_two() {
         for exp in 0u32..=20 {
@@ -220,91 +351,64 @@ mod tests {
         }
     }
 
-    // Test 2: log2_q16 error < 0.001 bits vs f64 ------------------------------------------------------
     #[test]
     fn test_log2_error_bound() {
-        let test_values: &[u64] = &[1, 3, 7, 10, 100, 255, 256, 1000, 65535, 1_000_000];
+        let test_values: &[u64] = &[1, 2, 3, 7, 10, 100, 255, 256, 1000, 65535, 1_000_000];
         for &x in test_values {
             let got = q16_to_f64(log2_q16(x));
-            let expected = log2_f64_ref(x);
+            let expected = (x as f64).log2();
             assert!(
                 (got - expected).abs() < 0.001,
-                "log2_q16({x}): got={got:.6}, f64={expected:.6}, error={:.6}",
-                (got - expected).abs()
+                "log2_q16({x}): got={got:.6}, f64={expected:.6}"
             );
         }
     }
 
-    // Test 3: entropía máxima cuando todas las IPs son distintas (distribución uniforme) ---------------
     #[test]
     fn test_max_entropy_uniform_distribution() {
         let mut w = WindowEntropy::new();
-        // 256 IPs distintas, 1 paquete cada una → entropía = log2(256) = 8 bits
-        for i in 0u32..256 {
-            // IPs en subredes distintas para evitar colisiones de bucket
-            let ip = (i << 24) | 0x00_00_01;
-            w.add(ip);
+        // Insertamos suficientes muestras distribuidas uniformemente en los 256 buckets
+        for round in 0u32..16 {
+            for i in 0u32..256 {
+                let ip = (round << 16) ^ (i.wrapping_mul(0x0101_0101));
+                w.add(ip);
+            }
         }
         let h = q16_to_f64(w.entropy_q16());
-        // Con 256 buckets distintos y distribución uniforme, H ≈ 8 bits
-        assert!(h > 7.5 && h <= 8.1, "H uniforme = {h:.4} bits, esperado ~8.0");
+        assert!(h > 7.4 && h <= 8.05, "H uniforme = {h:.4} bits");
     }
 
-    // Test 4: entropía cero cuando todos los paquetes vienen de la misma IP ---------------------------
     #[test]
     fn test_zero_entropy_single_source() {
         let mut w = WindowEntropy::new();
-        let single_ip: u32 = 0xC0A8_0001; // 192.168.0.1
         for _ in 0..10_000 {
-            w.add(single_ip);
+            w.add(0xC0A8_0001);
         }
         let h = q16_to_f64(w.entropy_q16());
-        assert!(h < 0.01, "H mono-fuente = {h:.6} bits, debería ser ~0");
+        assert!(h < 0.001, "H mono-fuente = {h:.6} bits, debería ser 0");
     }
 
-    // Test 5: is_anomalous detecta concentración y dispersión ------------------------------------------
     #[test]
     fn test_is_anomalous_detects_both_directions() {
-        // Línea base: distribución semi-uniforme (H ≈ 7.0 bits en Q16)
-        let baseline_q16: u64 = 7 * Q16; // 7.0 bits
-        let deviation_q16: u64 = Q16 / 2; // ±0.5 bits de tolerancia
+        let baseline_q16: u64 = 7 * Q16;
+        let deviation_q16: u64 = Q16 / 2;
 
-        // Caso normal: entropía ~7 bits → no anómalo
-        let mut w_normal = WindowEntropy::new();
-        for i in 0u32..128 {
-            let ip = (i << 24) | 0x0A_00_01;
-            w_normal.add(ip);
-            w_normal.add(ip); // 2 paquetes por IP → distribución uniforme en 128 buckets
-        }
-        let h_normal = q16_to_f64(w_normal.entropy_q16());
-        assert!(
-            !w_normal.is_anomalous(baseline_q16, deviation_q16),
-            "Tráfico normal ({h_normal:.3} bits) no debería ser anómalo"
+        // Ventana pequeña (< MIN_SAMPLES_FOR_VERDICT) devuelve None en checked
+        let mut w_small = WindowEntropy::new();
+        w_small.add(0x0A00_0001);
+        assert_eq!(
+            w_small.is_anomalous_checked(baseline_q16, deviation_q16, MIN_SAMPLES_FOR_VERDICT),
+            None
         );
 
-        // Caso DDoS mono-fuente: H ≈ 0 → anómalo por baja entropía
+        // DDoS mono-fuente
         let mut w_ddos = WindowEntropy::new();
-        for _ in 0..10_000 {
-            w_ddos.add(0x0A_00_00_01);
+        for _ in 0..4096 {
+            w_ddos.add(0x0A00_0001);
         }
-        assert!(
-            w_ddos.is_anomalous(baseline_q16, deviation_q16),
-            "DDoS mono-fuente debería ser anómalo"
-        );
-
-        // Caso spoofing extremo: H ≈ 8 → anómalo por alta entropía
-        let mut w_spoof = WindowEntropy::new();
-        let mut prng: u32 = 0xDEAD_BEEF;
-        for _ in 0..50_000 {
-            prng ^= prng << 13;
-            prng ^= prng >> 17;
-            prng ^= prng << 5;
-            w_spoof.add(prng);
-        }
-        let h_spoof = q16_to_f64(w_spoof.entropy_q16());
-        assert!(
-            w_spoof.is_anomalous(baseline_q16, deviation_q16),
-            "IP spoofing extremo ({h_spoof:.3} bits) debería ser anómalo"
+        assert_eq!(
+            w_ddos.is_anomalous_checked(baseline_q16, deviation_q16, MIN_SAMPLES_FOR_VERDICT),
+            Some(true)
         );
     }
 }

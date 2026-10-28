@@ -1,165 +1,178 @@
 // =============================================================================
-// TZANIX Æther-Core — LatencyWatchdog
+// TZANIX Æther-Core — LatencyWatchdog (Latency Guard)
 // =============================================================================
-// Propósito: Monitor interno de latencia de ejecución de código.
-// NO es un detector de ataques de red. No toma decisiones de descarte de
-// paquetes. Sirve únicamente para detectar hilos colgados o sobrecarga interna
-// del proceso y para telemetría de rendimiento.
-//
-// Migración de nombres:
-//   LucyTimeAuditor            -> LatencyWatchdog
-//   auditar_potencial_tensor() -> measure_execution_ns() / measure_execution_cycles()
-//   "Singularidad Temporal"    -> ExecutionOverrun
+// Propósito: Monitor interno de latencia de ejecución de código (Latency Guard).
+// NO es un detector de ataques de red ni toma decisiones de descarte de paquetes.
+// Mide la duración después de que `f()` termina para telemetría de rendimiento
+// y detección de degradación / migración de núcleo.
 // =============================================================================
 
-/// Error devuelto cuando la ejecución supera el límite configurado.
+/// Error devuelto cuando la ejecución supera el límite o migra de núcleo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WatchdogError {
-    /// El bloque de código tardó más de `limit` nanosegundos / ciclos.
-    ExecutionOverrun,
+    /// El bloque de código tardó `elapsed` unidades (superando `limit`).
+    ExecutionOverrun { elapsed: u64 },
+    /// El hilo migró de núcleo lógico durante la medición (IA32_TSC_AUX cambió),
+    /// por lo que los contadores TSC de inicio y fin no son comparables.
+    CoreMigrated,
 }
 
 impl core::fmt::Display for WatchdogError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            WatchdogError::ExecutionOverrun => {
-                write!(f, "LatencyWatchdog: ejecución superó el límite configurado")
+            WatchdogError::ExecutionOverrun { elapsed } => {
+                write!(
+                    f,
+                    "LatencyWatchdog: ejecución ({}) superó el límite configurado",
+                    elapsed
+                )
+            }
+            WatchdogError::CoreMigrated => {
+                write!(f, "LatencyWatchdog: el hilo migró de núcleo durante la medición")
             }
         }
     }
 }
 
-// -----------------------------------------------------------------------------
-// Versión con std — usa std::time::Instant (nanosegundos reales de reloj).
-// -----------------------------------------------------------------------------
-#[cfg(feature = "std")]
+/// Monitor de latencia con API unificada `measure()` en todas las arquitecturas.
 pub struct LatencyWatchdog {
-    /// Límite de latencia en nanosegundos de pared.
-    pub limit_ns: u64,
+    /// Límite en la unidad descrita por `Self::UNIT`.
+    pub limit: u64,
 }
 
-#[cfg(feature = "std")]
 impl LatencyWatchdog {
-    pub fn new(limit_ns: u64) -> Self {
-        Self { limit_ns }
+    /// Unidad de tiempo reportada por `measure()`.
+    #[cfg(feature = "std")]
+    pub const UNIT: &'static str = "ns";
+
+    #[cfg(all(not(feature = "std"), target_arch = "x86_64"))]
+    pub const UNIT: &'static str = "tsc_cycles";
+
+    #[cfg(all(not(feature = "std"), target_arch = "aarch64"))]
+    pub const UNIT: &'static str = "cntvct_ticks";
+
+    #[cfg(all(not(feature = "std"), not(any(target_arch = "x86_64", target_arch = "aarch64"))))]
+    pub const UNIT: &'static str = "ticks";
+
+    pub const fn new(limit: u64) -> Self {
+        Self { limit }
     }
 
-    /// Mide el tiempo de ejecución de `f`. Devuelve los nanosegundos transcurridos.
-    /// Si supera `limit_ns`, devuelve `Err(WatchdogError::ExecutionOverrun)`.
-    ///
-    /// ⚠️ NO usar en el camino crítico de red: añade la latencia de `Instant::now()`
-    /// (~20 ns en Linux). Úsalo solo para benchmarking interno y detección de
-    /// hilos colgados (load-shedding watchdog).
+    /// API unificada multi-plataforma: mide `f()` y devuelve el tiempo transcurrido
+    /// en unidades `Self::UNIT`, o `Err(WatchdogError)` si supera `self.limit` o migra de core.
+    #[inline(always)]
+    pub fn measure<F: FnMut()>(&self, f: F) -> Result<u64, WatchdogError> {
+        #[cfg(feature = "std")]
+        {
+            self.measure_execution_ns(f)
+        }
+        #[cfg(all(not(feature = "std"), target_arch = "x86_64"))]
+        {
+            self.measure_execution_cycles(f)
+        }
+        #[cfg(all(not(feature = "std"), target_arch = "aarch64"))]
+        {
+            self.measure_execution_ticks(f)
+        }
+        #[cfg(all(not(feature = "std"), not(any(target_arch = "x86_64", target_arch = "aarch64"))))]
+        {
+            let mut func = f;
+            func();
+            Ok(0)
+        }
+    }
+
+    /// Versión con `std`: usa `std::time::Instant` (nanosegundos reales).
+    #[cfg(feature = "std")]
     pub fn measure_execution_ns<F: FnMut()>(&self, mut f: F) -> Result<u64, WatchdogError> {
         let start = std::time::Instant::now();
         f();
         let elapsed = start.elapsed().as_nanos() as u64;
 
-        if elapsed > self.limit_ns {
-            Err(WatchdogError::ExecutionOverrun)
+        if elapsed > self.limit {
+            Err(WatchdogError::ExecutionOverrun { elapsed })
         } else {
             Ok(elapsed)
         }
     }
-}
 
-// -----------------------------------------------------------------------------
-// Versión no_std x86_64 — usa RDTSCP (serializado, evita reordenamiento OOO).
-// RDTSC sin serializar puede reordenarse; RDTSCP garantiza orden de memoria.
-// Nota: el resultado son *ciclos de CPU*, no nanosegundos.
-// Para convertir: ns = ciclos * 1_000_000_000 / tsc_hz
-// -----------------------------------------------------------------------------
-#[cfg(all(not(feature = "std"), target_arch = "x86_64"))]
-pub struct LatencyWatchdog {
-    /// Límite en *ciclos de TSC*, no en nanosegundos.
-    /// Calcula el valor con: limit_cycles = limit_ns * tsc_hz / 1_000_000_000
-    pub limit_cycles: u64,
-}
-
-#[cfg(all(not(feature = "std"), target_arch = "x86_64"))]
-impl LatencyWatchdog {
-    pub fn new(limit_cycles: u64) -> Self {
-        Self { limit_cycles }
-    }
-
-    /// Mide el bloque `f` con RDTSCP serializado. Devuelve ciclos de TSC.
-    /// ⚠️ NO usar como detector de ataques — el resultado varía por planificador,
-    /// interrupciones y estados de energía de la CPU.
+    /// Versión `x86_64`: usa `__rdtscp` + `_mm_lfence` y verifica `IA32_TSC_AUX`
+    /// para detectar migración de núcleo y evitar que accesos a memoria de `f()`
+    /// se reordenen fuera del intervalo medido.
+    #[cfg(target_arch = "x86_64")]
     pub fn measure_execution_cycles<F: FnMut()>(&self, mut f: F) -> Result<u64, WatchdogError> {
-        let start: u64;
-        let end: u64;
-        // RDTSCP: barrera de carga + lee TSC; impide que instrucciones anteriores
-        // se reordenen después de la lectura (a diferencia de RDTSC sin serializar).
-        unsafe {
-            core::arch::asm!(
-                "rdtscp",
-                "shl rdx, 32",
-                "or rax, rdx",
-                out("rax") start,
-                out("rdx") _,
-                out("rcx") _,
-                options(nomem, nostack),
-            );
-        }
+        use core::arch::x86_64::{__rdtscp, _mm_lfence};
+
+        let (mut aux_start, mut aux_end) = (0u32, 0u32);
+        let start = unsafe {
+            _mm_lfence();
+            let t = __rdtscp(&mut aux_start);
+            _mm_lfence();
+            t
+        };
 
         f();
 
-        unsafe {
-            core::arch::asm!(
-                "rdtscp",
-                "shl rdx, 32",
-                "or rax, rdx",
-                out("rax") end,
-                out("rdx") _,
-                out("rcx") _,
-                options(nomem, nostack),
-            );
+        let end = unsafe {
+            let t = __rdtscp(&mut aux_end);
+            _mm_lfence();
+            t
+        };
+
+        if aux_start != aux_end {
+            return Err(WatchdogError::CoreMigrated);
         }
 
         let elapsed = end.wrapping_sub(start);
-        if elapsed > self.limit_cycles {
-            Err(WatchdogError::ExecutionOverrun)
+        if elapsed > self.limit {
+            Err(WatchdogError::ExecutionOverrun { elapsed })
         } else {
             Ok(elapsed)
         }
     }
-}
 
-// -----------------------------------------------------------------------------
-// Versión no_std AArch64 — usa CNTVCT_EL0 (reloj virtual fijo, ~54 MHz típico).
-// IMPORTANTE: este contador corre a una frecuencia FIJA (no la del CPU).
-// Para convertir: ns = ticks * 1_000_000_000 / cntfrq_el0
-// El límite debe estar en *ticks*, no en ciclos de CPU.
-// -----------------------------------------------------------------------------
-#[cfg(all(not(feature = "std"), target_arch = "aarch64"))]
-pub struct LatencyWatchdog {
-    /// Límite en ticks del contador CNTVCT_EL0.
-    /// Calcula con: limit_ticks = limit_ns * cntfrq / 1_000_000_000
-    pub limit_ticks: u64,
-}
-
-#[cfg(all(not(feature = "std"), target_arch = "aarch64"))]
-impl LatencyWatchdog {
-    pub fn new(limit_ticks: u64) -> Self {
-        Self { limit_ticks }
-    }
-
-    /// Mide el bloque `f` con CNTVCT_EL0. Devuelve ticks del contador virtual.
+    /// Versión `aarch64`: ejecuta barrera `isb` antes de leer `cntvct_el0`.
+    #[cfg(target_arch = "aarch64")]
     pub fn measure_execution_ticks<F: FnMut()>(&self, mut f: F) -> Result<u64, WatchdogError> {
         let start: u64;
         let end: u64;
         unsafe {
-            core::arch::asm!("mrs {}, cntvct_el0", out(reg) start, options(nomem, nostack));
+            core::arch::asm!(
+                "isb",
+                "mrs {}, cntvct_el0",
+                out(reg) start,
+                options(nostack)
+            );
         }
+
         f();
+
         unsafe {
-            core::arch::asm!("mrs {}, cntvct_el0", out(reg) end, options(nomem, nostack));
+            core::arch::asm!(
+                "isb",
+                "mrs {}, cntvct_el0",
+                out(reg) end,
+                options(nostack)
+            );
         }
+
         let elapsed = end.wrapping_sub(start);
-        if elapsed > self.limit_ticks {
-            Err(WatchdogError::ExecutionOverrun)
+        if elapsed > self.limit {
+            Err(WatchdogError::ExecutionOverrun { elapsed })
         } else {
             Ok(elapsed)
         }
+    }
+
+    /// En `aarch64`, lee la frecuencia del contador virtual (`cntfrq_el0` en Hz)
+    /// para convertir ticks a nanosegundos: `ns = ticks * 1_000_000_000 / cntfrq_hz()`.
+    #[cfg(target_arch = "aarch64")]
+    #[inline(always)]
+    pub fn cntfrq_hz() -> u64 {
+        let freq: u64;
+        unsafe {
+            core::arch::asm!("mrs {}, cntfrq_el0", out(reg) freq, options(nomem, nostack));
+        }
+        freq
     }
 }

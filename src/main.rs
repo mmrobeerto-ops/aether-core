@@ -110,7 +110,7 @@ impl UniversalProductionPipeline {
             action_type: action_flag,
             _padding: [0; 3],
         };
-        telemetry_buffer.try_push(event);
+        let _ = telemetry_buffer.try_push(event);
 
         action_flag
     }

@@ -31,6 +31,9 @@ pub struct SpscTelemetryBuffer {
     // Índice de Lectura (Exclusivo del Consumidor / Logger / UI Backend)
     pub tail: AtomicUsize,
     _pad_tail: [u8; 56],
+
+    // Contador atómico de eventos descartados por saturación del anillo
+    pub dropped_events: AtomicUsize,
 }
 
 impl SpscTelemetryBuffer {
@@ -42,10 +45,13 @@ impl SpscTelemetryBuffer {
             _pad_head: [0; 56],
             tail: AtomicUsize::new(0),
             _pad_tail: [0; 56],
+            dropped_events: AtomicUsize::new(0),
         }
     }
 
-    /// Inserción atómica ultra-rápida desde la ruta crítica (~1.1 ns)
+    /// Inserción atómica ultra-rápida desde la ruta crítica (~1.1 ns).
+    /// Devuelve `false` e incrementa `dropped_events` si el anillo está lleno.
+    #[must_use]
     #[inline(always)]
     pub fn try_push(&mut self, event: UniversalEvent) -> bool {
         let current_head = self.head.load(Ordering::Relaxed);
@@ -53,7 +59,8 @@ impl SpscTelemetryBuffer {
 
         // Validación matemática de saturación libre de saltos complejos
         if current_head.wrapping_sub(current_tail) >= RING_CAPACITY {
-            return false; // Buffer saturado: se descarta el log para salvar el rendimiento crítico
+            self.dropped_events.fetch_add(1, Ordering::Relaxed);
+            return false; // Buffer saturado: se cuenta y descarta para salvar la ruta crítica
         }
 
         let index = current_head & RING_MASK;

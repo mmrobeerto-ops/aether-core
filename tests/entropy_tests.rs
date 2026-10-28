@@ -102,6 +102,85 @@ fn test_latency_watchdog() {
     let result_slow = watchdog.measure_execution_ns(|| {
         std::thread::sleep(std::time::Duration::from_millis(5));
     });
-    assert!(result_slow.is_err(), "Debe detectar overrun de latencia");
-    assert_eq!(result_slow.err(), Some(WatchdogError::ExecutionOverrun));
+    assert!(
+        matches!(result_slow, Err(WatchdogError::ExecutionOverrun { elapsed }) if elapsed >= 1_000_000),
+        "Debe detectar overrun de latencia con valor medido: {:?}",
+        result_slow
+    );
+}
+
+#[test]
+fn test_window_entropy_selective_bucket_mitigation_no_self_dos() {
+    use tzanix_aether_core::doca_adapter::{
+        DocaFlowAction, DocaPipelineConfig, DocaSmartNicPipeline, PacketHeaderView,
+    };
+    use tzanix_aether_core::window_entropy::{WindowEntropy, WindowPolicy, WindowState, Q16};
+
+    let pipeline = DocaSmartNicPipeline::with_config(DocaPipelineConfig::default());
+    let mut window = WindowEntropy::with_seed(0x1234_5678);
+    let mut policy = WindowPolicy {
+        baseline_q16: 7 * Q16,
+        deviation_q16: Q16,
+        hysteresis_q16: Q16 / 4,
+        min_window_packets: 2048,
+        max_bucket_share_q16: Q16 / 10, // 10% cuota máxima por bucket bajo ataque
+    };
+
+    // 1. Ventana bajo ataque volumétrico concentrado (90% atacante 10.9.9.9, 10% clientes legítimos variados)
+    let attacker_ip: u32 = 0x0A09_0909;
+    for i in 0u32..2048 {
+        let src_ip = if i % 10 == 0 {
+            0xC0A8_0000 | (i & 0xFF) // IPs legítimas distribuidas
+        } else {
+            attacker_ip
+        };
+        let hdr = PacketHeaderView {
+            src_ip,
+            packet_len: 64,
+            ..Default::default()
+        };
+        let _ = pipeline.evaluate_packet_with_window(&hdr, &mut window, &mut policy, None);
+    }
+
+    assert_eq!(window.state(), WindowState::Attack, "Debe entrar en estado Attack tras el lote DDoS");
+
+    // 2. Durante el estado Attack: el paquete del atacante se descarta (DropHardware),
+    //    pero el cliente legítimo NO es descartado (pasa a MirrorInspection).
+    let attacker_hdr = PacketHeaderView {
+        src_ip: attacker_ip,
+        packet_len: 64,
+        ..Default::default()
+    };
+    let legit_hdr = PacketHeaderView {
+        src_ip: 0xAC10_55AA,
+        packet_len: 512,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        pipeline.evaluate_packet_with_window(&attacker_hdr, &mut window, &mut policy, None),
+        DocaFlowAction::DropHardware,
+        "El origen dominante del ataque debe ser bloqueado"
+    );
+    assert_ne!(
+        pipeline.evaluate_packet_with_window(&legit_hdr, &mut window, &mut policy, None),
+        DocaFlowAction::DropHardware,
+        "El cliente legítimo NO debe sufrir DoS (no debe ser DropHardware)"
+    );
+
+    // 3. Recuperación automática a Normal cuando pasa el ataque y vuelve el tráfico normal (~7.0 bits, 128 IPs)
+    for i in 0u32..2048 {
+        let ip_idx = i % 128;
+        let hdr = PacketHeaderView {
+            src_ip: 0x0A00_0000 | (ip_idx << 8) | (ip_idx ^ 0x5A),
+            packet_len: 256,
+            ..Default::default()
+        };
+        let _ = pipeline.evaluate_packet_with_window(&hdr, &mut window, &mut policy, None);
+    }
+    assert_eq!(
+        window.state(),
+        WindowState::Normal,
+        "La ventana debe recuperarse a Normal cuando cesa el ataque"
+    );
 }

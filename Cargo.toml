@@ -2,15 +2,15 @@
 name = "tzanix-aether-core"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
+license = "AGPL-3.0-or-later"
+publish = false
 authors = ["TZANIX Core Team"]
 description = "Motor de análisis de entropía de distribución de IPs para detección de anomalías de red (Q16.16, no_std, zero-heap)"
 
 [lib]
 name = "tzanix_aether_core"
-crate-type = ["rlib", "staticlib"]
-
-[profile.dev]
-panic = "abort"
+crate-type = ["rlib"]
 
 [profile.release]
 opt-level = 3
@@ -27,17 +27,22 @@ tokio = { version = "1.0", features = ["full"], optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 
-# Dependencia de Python, aislada y opcional
-pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+# Dependencia de Python opcional (extension-module separado para no romper cargo test)
+pyo3 = { version = "0.22", optional = true }
 
 [features]
-default = ["std"]
-std = ["dep:memmap2", "dep:rand", "dep:axum", "dep:tokio", "dep:serde", "dep:serde_json"]
-# Habilita módulos en investigación sin respaldo empírico en producción.
-# cargo build --features experimental
+default = ["std", "server"]
+# std puro: solo activa std y memmap2 para la librería
+std = ["dep:memmap2"]
+# server: activa el binario HTTP / simulación con tokio, axum, serde y rand
+server = ["std", "dep:rand", "dep:axum", "dep:tokio", "dep:serde", "dep:serde_json"]
+# Habilita el panic_handler bare-metal cuando no se enlaza con otro binario que defina el suyo
+panic-handler = []
+# Habilita módulos en investigación sin respaldo empírico en producción
 experimental = []
-# Feature flag para habilitar compilación de bindings PyO3
+# Feature flag para compilar bindings PyO3 (maturin activa extension-module)
 python = ["dep:pyo3", "std"]
+extension-module = ["python", "pyo3/extension-module"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
