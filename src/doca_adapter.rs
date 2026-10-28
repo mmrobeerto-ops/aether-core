@@ -7,6 +7,7 @@
 
 use crate::{AetherSignalEngine, DenseSignalSnapshot, SIGNAL_CHANNELS};
 use crate::storage::{SpscTelemetryBuffer, UniversalEvent};
+use crate::window_entropy::WindowEntropy;
 // Nota: validate_circular_coherence movida a src/experimental/physics.rs
 // No se usa en el camino crítico de producción (sin respaldo empírico en datasets reales).
 
@@ -313,5 +314,48 @@ impl DocaSmartNicPipeline {
         }
 
         action
+    }
+
+    /// Evalúa una ventana deslizante de distribución de IPs de origen en punto fijo Q16.16.
+    ///
+    /// Esta es la señal primaria real de detección volumétrica en capa 3/4:
+    ///   1. Registra `header.src_ip` en `window` (256 buckets XOR, O(1), no_std).
+    ///   2. Si la ventana alcanza `min_window_packets` y `window.is_anomalous(baseline_q16, deviation_q16)`
+    ///      es verdadero (inundación monofuente o IP spoofing masivo), devuelve `DropHardware`.
+    ///   3. En caso contrario, delega al clasificador de cabeceras/payload `evaluate_packet()`.
+    #[inline(always)]
+    pub fn evaluate_packet_with_window(
+        &self,
+        header: &PacketHeaderView,
+        snapshot: &DenseSignalSnapshot,
+        window: &mut WindowEntropy,
+        baseline_q16: u64,
+        deviation_q16: u64,
+        min_window_packets: u64,
+        telemetry: Option<&mut SpscTelemetryBuffer>,
+    ) -> DocaFlowAction {
+        window.add(header.src_ip);
+
+        if window.packet_count() >= min_window_packets
+            && window.is_anomalous(baseline_q16, deviation_q16)
+        {
+            if let Some(tb) = telemetry {
+                let h_q16 = window.entropy_q16();
+                let event = UniversalEvent {
+                    timestamp_ns: 0,
+                    entity_id: header.src_ip,
+                    signal_value: header.packet_len as u32,
+                    metric_entropy: (h_q16 as f32) / 65536.0,
+                    metric_volatility: 1.0,
+                    risk_multiplier: 1.0,
+                    action_type: DocaFlowAction::DropHardware as u8,
+                    _padding: [0; 3],
+                };
+                tb.try_push(event);
+            }
+            return DocaFlowAction::DropHardware;
+        }
+
+        self.evaluate_packet(snapshot, telemetry)
     }
 }
