@@ -9,16 +9,12 @@ fn test_entropy_precision_and_boundaries() {
     };
 
     let entropy_vec = AetherSignalEngine::compute_entropy_vectorized(&snapshot_uniform);
-    let entropy_hyper = AetherSignalEngine::compute_entropy_hyper_vectorized(&snapshot_uniform);
     let entropy_lut = AetherSignalEngine::compute_signal_entropy(&snapshot_uniform);
     let entropy_std = AetherSignalEngine::compute_entropy_standard(&snapshot_uniform);
 
     // El error absoluto debe estar dentro de rangos tolerables
     let abs_error = (entropy_vec - entropy_std).abs();
     assert!(abs_error < 1e-4, "Error absoluto demasiado alto (vectorized): {}", abs_error);
-    
-    let abs_error_hyper = (entropy_hyper - entropy_std).abs();
-    assert!(abs_error_hyper < 1e-4, "Error absoluto demasiado alto (hyper): {}", abs_error_hyper);
 
     let abs_error_lut = (entropy_lut - entropy_std).abs();
     assert!(abs_error_lut < 1e-2, "Error absoluto de cuantización demasiado alto (lut): {}", abs_error_lut);
@@ -30,24 +26,32 @@ fn test_entropy_precision_and_boundaries() {
     };
     let entropy_empty = AetherSignalEngine::compute_entropy_vectorized(&snapshot_empty);
     assert_eq!(entropy_empty, 0.0);
-    
-    let entropy_empty_hyper = AetherSignalEngine::compute_entropy_hyper_vectorized(&snapshot_empty);
-    assert_eq!(entropy_empty_hyper, 0.0);
-    
+
     let entropy_empty_lut = AetherSignalEngine::compute_signal_entropy(&snapshot_empty);
     assert_eq!(entropy_empty_lut, 0.0);
+
+    // Escenario 3: Valores altos cerca de u32::MAX (verifica no-overflow en u64)
+    let snapshot_max = DenseSignalSnapshot {
+        channel_alpha: [u32::MAX; 8],
+        channel_beta: [u32::MAX; 8],
+    };
+    let entropy_max = AetherSignalEngine::compute_signal_entropy(&snapshot_max);
+    assert!(entropy_max > 3.9, "No debe desbordar con u32::MAX: {}", entropy_max);
 }
 
+#[cfg(feature = "experimental")]
 #[test]
-fn test_polarized_circular_coherence() {
-    // Escenario Coherente (Simetría de fase circular pura)
-    // Con R = 2.0, el radio de proporcionalidad es r = 0.5 (1/R)
+fn test_experimental_polarized_circular_coherence() {
+    use tzanix_aether_core::experimental::physics::{
+        compute_induced_magnetic_field, validate_circular_coherence,
+    };
+
     let ch_x_coherent = 2.0;
     let ch_z_coherent = 0.0;
     let radius = 0.5;
     let tolerance = 0.05;
 
-    let is_coherent = AetherSignalEngine::validate_circular_coherence(
+    let is_coherent = validate_circular_coherence(
         ch_x_coherent,
         ch_z_coherent,
         radius,
@@ -55,10 +59,9 @@ fn test_polarized_circular_coherence() {
     );
     assert!(is_coherent, "Debe ser coherente");
 
-    // Escenario con Ruido (Asimetría)
     let ch_x_noisy = 2.5;
     let ch_z_noisy = 0.5;
-    let is_coherent_noisy = AetherSignalEngine::validate_circular_coherence(
+    let is_coherent_noisy = validate_circular_coherence(
         ch_x_noisy,
         ch_z_noisy,
         radius,
@@ -66,28 +69,25 @@ fn test_polarized_circular_coherence() {
     );
     assert!(!is_coherent_noisy, "Debe ser filtrado por ruido");
 
-    // Validar el cálculo del campo magnético inducido B (u_r x E)
-    let inv_c = 1.0 / 3.0; // velocidad de la luz c = 3.0
-    let (b_x, b_z) = AetherSignalEngine::compute_induced_magnetic_field(
+    let inv_c = 1.0 / 3.0;
+    let (b_x, b_z) = compute_induced_magnetic_field(
         ch_x_coherent,
         ch_z_coherent,
         inv_c,
     );
-    // b_x = -ch_z * inv_c = -0.0 * inv_c = 0.0
-    // b_z = ch_x * inv_c = 2.0 * (1/3) = 0.6666...
     assert_eq!(b_x, 0.0);
     assert!((b_z - 0.6666666666666666).abs() < 1e-10);
 }
 
 #[test]
-fn test_lucy_time_auditor() {
-    use tzanix_aether_core::lucy_core::LucyTimeAuditor;
+fn test_latency_watchdog() {
+    use tzanix_aether_core::latency_watchdog::{LatencyWatchdog, WatchdogError};
 
     // Umbral de 1 milisegundo (1,000,000 ns)
-    let auditor = LucyTimeAuditor::new(1_000_000);
+    let watchdog = LatencyWatchdog::new(1_000_000);
 
-    // 1. Una función ultra-rápida (coherente)
-    let result_fast = auditor.auditar_potencial_tensor(|| {
+    // 1. Ejecución rápida dentro del límite
+    let result_fast = watchdog.measure_execution_ns(|| {
         let mut x = 0;
         for i in 0..100 {
             x += i;
@@ -98,11 +98,10 @@ fn test_lucy_time_auditor() {
     let ns_elapsed = result_fast.unwrap();
     assert!(ns_elapsed < 1_000_000, "Debe tomar menos de 1ms");
 
-    // 2. Una función que se deforma en el tiempo (sobrepasa el umbral / Singularidad)
-    let result_slow = auditor.auditar_potencial_tensor(|| {
-        // Dormir un momento para forzar la singularidad temporal
+    // 2. Ejecución que sobrepasa el límite (ExecutionOverrun)
+    let result_slow = watchdog.measure_execution_ns(|| {
         std::thread::sleep(std::time::Duration::from_millis(5));
     });
-    assert!(result_slow.is_err(), "Debe fallar debido a singularidad temporal");
-    assert_eq!(result_slow.err(), Some("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam."));
+    assert!(result_slow.is_err(), "Debe detectar overrun de latencia");
+    assert_eq!(result_slow.err(), Some(WatchdogError::ExecutionOverrun));
 }

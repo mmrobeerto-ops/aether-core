@@ -77,7 +77,7 @@ pub unsafe extern "C" fn tzanix_doca_evaluate_raw_packet(
             let pipeline = DocaSmartNicPipeline::with_config(DocaPipelineConfig {
                 drop_entropy_threshold,
                 forward_entropy_threshold,
-                coherence_tolerance: 0.0,
+                _reserved_coherence: 0.0,
             });
             let action: DocaFlowAction = pipeline.evaluate_packet(&snapshot, None);
             action as u8

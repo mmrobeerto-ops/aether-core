@@ -7,6 +7,8 @@
 
 use crate::{AetherSignalEngine, DenseSignalSnapshot, SIGNAL_CHANNELS};
 use crate::storage::{SpscTelemetryBuffer, UniversalEvent};
+// Nota: validate_circular_coherence movida a src/experimental/physics.rs
+// No se usa en el camino crítico de producción (sin respaldo empírico en datasets reales).
 
 /// Acción de control emitida para el pipeline de hardware DOCA Flow
 #[repr(u8)]
@@ -44,8 +46,8 @@ pub struct DocaPipelineConfig {
     pub drop_entropy_threshold: f64,
     /// Umbral superior de entropía para zona de transición hacia Fast-Path directo (Default: 0.85)
     pub forward_entropy_threshold: f64,
-    /// Tolerancia de coherencia circular (0.0 desactiva validación de fase)
-    pub coherence_tolerance: f64,
+    /// Reservado para uso futuro (ignorado en producción hasta que se demuestre correlación empírica).
+    pub _reserved_coherence: f64,
 }
 
 impl Default for DocaPipelineConfig {
@@ -53,7 +55,7 @@ impl Default for DocaPipelineConfig {
         Self {
             drop_entropy_threshold: 0.35,
             forward_entropy_threshold: 0.85,
-            coherence_tolerance: 0.0,
+            _reserved_coherence: 0.0,
         }
     }
 }
@@ -75,7 +77,7 @@ impl DocaPipelineConfig {
         }
         if let Ok(v) = std::env::var("TZANIX_COHERENCE_TOLERANCE") {
             if let Ok(parsed) = v.parse::<f64>() {
-                cfg.coherence_tolerance = parsed;
+                cfg._reserved_coherence = parsed;
             }
         }
         cfg
@@ -97,8 +99,6 @@ impl DocaPipelineConfig {
                         cfg.drop_entropy_threshold = val;
                     } else if k == "TZANIX_FORWARD_ENTROPY" || k == "forward_entropy_threshold" {
                         cfg.forward_entropy_threshold = val;
-                    } else if k == "TZANIX_COHERENCE_TOLERANCE" || k == "coherence_tolerance" {
-                        cfg.coherence_tolerance = val;
                     }
                 }
             }
@@ -150,12 +150,12 @@ pub struct DocaSmartNicPipeline {
 
 impl DocaSmartNicPipeline {
     /// Inicializa el pipeline con umbrales estrictos o predeterminados
-    pub const fn new(entropy_threshold: f64, coherence_tolerance: f64) -> Self {
+    pub const fn new(entropy_threshold: f64, _coherence_tolerance: f64) -> Self {
         Self {
             config: DocaPipelineConfig {
                 drop_entropy_threshold: entropy_threshold,
-                forward_entropy_threshold: entropy_threshold, // Modo binario retrocompatible
-                coherence_tolerance,
+                forward_entropy_threshold: entropy_threshold,
+                _reserved_coherence: 0.0,
             },
         }
     }
@@ -280,31 +280,20 @@ impl DocaSmartNicPipeline {
         snapshot: &DenseSignalSnapshot,
         telemetry: Option<&mut SpscTelemetryBuffer>,
     ) -> DocaFlowAction {
-        // 1. Evaluación de Entropía Matemática Vectorizada (Shannon)
+        // 1. Entropía de Shannon sobre el snapshot (señal primaria de detección de payload)
         let entropy = AetherSignalEngine::compute_signal_entropy(snapshot);
 
-        // 2. Coherencia Geométrica Invariante de Fase (si tolerance > 0.0)
-        let is_coherent = if self.config.coherence_tolerance > 0.0 {
-            let channel_x = (snapshot.channel_alpha[0] as f64) / 65536.0;
-            let channel_z = (snapshot.channel_beta[0] as f64) / 65536.0;
-            AetherSignalEngine::validate_circular_coherence(
-                channel_x,
-                channel_z,
-                1.0,
-                self.config.coherence_tolerance,
-            )
-        } else {
-            true
-        };
-
-        // 3. Decisión Determinista Branchless en 3 Zonas (Drop / Mirror / Forward)
-        let action = if entropy.is_nan() || entropy < self.config.drop_entropy_threshold || !is_coherent {
+        // 2. Decisión determinista en 3 zonas (Drop / Mirror / Forward)
+        // La función validate_circular_coherence() fue removida del camino crítico:
+        // no tiene respaldo empírico con datasets reales de red.
+        // Para detección de distribución de IPs, usar WindowEntropy (window_entropy.rs).
+        let action = if entropy.is_nan() || entropy < self.config.drop_entropy_threshold {
             DocaFlowAction::DropHardware
         } else if entropy < self.config.forward_entropy_threshold {
-            // Zona de transición (0.35 <= H < 0.85): Desvío a MirrorInspection para análisis heurístico L7
+            // Zona de transición: Desviar para análisis heurístico L7
             DocaFlowAction::MirrorInspection
         } else {
-            // Zona de alta entropía (H >= 0.85): Fast-Path directo a la CPU Host
+            // Alta entropía: Fast-Path directo a la CPU Host
             DocaFlowAction::ForwardHost
         };
 

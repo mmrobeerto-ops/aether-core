@@ -17,29 +17,33 @@ pub struct UniversalProductionPipeline {
 }
 
 impl UniversalProductionPipeline {
-    /// Procesa la señal polarizada para purgar el ruido basándose en cuadratura circular.
+    /// Verifica si el snapshot tiene al menos un canal activo en ambos hemisferios (alpha + beta).
+    /// Un snapshot con todos los canales beta en cero indica tráfico degenerado (flood estático).
+    /// Esta comprobación reemplaza la validación de coherencia circular electromagnética que
+    /// fue movida a experimental/physics.rs por carecer de respaldo empírico en datasets reales.
     #[inline(always)]
     pub fn process_polarized_signal_pass(
         &self,
         snapshot: &DenseSignalSnapshot,
-        radius: f64,
-        tolerance: f64,
+        _radius: f64,
+        _tolerance: f64,
     ) -> bool {
-        let mut total_coherent_channels = 0;
-
-        // Evaluamos los canales vectoriales emparejados como campos en cuadratura circular
+        let mut alpha_sum: u64 = 0;
+        let mut beta_sum: u64 = 0;
         for i in 0..SIGNAL_CHANNELS {
-            let ch_x = snapshot.channel_alpha[i] as f64;
-            let ch_z = snapshot.channel_beta[i] as f64;
-
-            // Validación geométrica pura sin saltos condicionales pesados
-            if AetherSignalEngine::validate_circular_coherence(ch_x, ch_z, radius, tolerance) {
-                total_coherent_channels += 1;
-            }
+            alpha_sum += snapshot.channel_alpha[i] as u64;
+            beta_sum += snapshot.channel_beta[i] as u64;
         }
-
-        // Retorna TRUE si la mayoría de los canales conservan la pureza de fase física de la onda
-        total_coherent_channels > (SIGNAL_CHANNELS / 2)
+        // Ambos hemisferios deben tener actividad (ratio > 10:1 indica señal degenerada)
+        if alpha_sum == 0 || beta_sum == 0 {
+            return false;
+        }
+        let ratio = if alpha_sum > beta_sum {
+            alpha_sum / beta_sum
+        } else {
+            beta_sum / alpha_sum
+        };
+        ratio < 10
     }
 
     /// Lazo síncrono crítico de ejecución pura en nanosegundos
@@ -647,14 +651,14 @@ async fn handle_heavy_calc(
 ) -> axum::response::Response {
     use axum::http::StatusCode;
     use axum::response::Response;
-    use tzanix_aether_core::lucy_core::LucyTimeAuditor;
+    use tzanix_aether_core::latency_watchdog::LatencyWatchdog;
 
     // Umbral de 5 milisegundos (5_000_000 ns)
-    let auditor = LucyTimeAuditor::new(5_000_000);
+    let watchdog = LatencyWatchdog::new(5_000_000);
 
     let is_stress = params.stress.unwrap_or(true); // true por defecto para el benchmark de Oha
 
-    let result = auditor.auditar_potencial_tensor(|| {
+    let result = watchdog.measure_execution_ns(|| {
         if is_stress {
             // Forzar un retraso real de 10 milisegundos para superar garantizadamente el umbral de 5ms
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -673,9 +677,9 @@ async fn handle_heavy_calc(
             .status(StatusCode::OK)
             .body(axum::body::Body::from(format!("Allowed. Elapsed: {} ns", ns)))
             .unwrap(),
-        Err(msg) => Response::builder()
+        Err(err) => Response::builder()
             .status(StatusCode::FORBIDDEN)
-            .body(axum::body::Body::from(msg))
+            .body(axum::body::Body::from(err.to_string()))
             .unwrap(),
     }
 }

@@ -1,84 +1,13 @@
-// TZANiX Deep Tech - Lucy Core Module
-// "El tiempo es la única unidad de medida verdadera." - Lucy (2014)
+// =============================================================================
+// TZANIX Æther-Core — lucy_core.rs (Archivo de compatibilidad)
+// =============================================================================
+// Este módulo re-exporta LatencyWatchdog con los nombres anteriores como
+// aliases de compatibilidad, para que el resto del código que usaba
+// LucyTimeAuditor compile sin modificaciones durante la transición.
+//
+// Migrar a latency_watchdog::LatencyWatchdog directamente cuando sea posible.
+// =============================================================================
 
-#[cfg(feature = "std")]
-use std::time::Instant;
-
-pub struct LucyTimeAuditor {
-    pub umbral_nanosegundos: u128,
-}
-
-impl LucyTimeAuditor {
-    pub fn new(limite_ns: u128) -> Self {
-        LucyTimeAuditor { umbral_nanosegundos: limite_ns }
-    }
-
-    /// Evalúa la "existencia" y legitimidad de la consulta basándose puramente en el tiempo
-    #[cfg(feature = "std")]
-    pub fn auditar_potencial_tensor<F>(&self, mut f_vector: F) -> Result<u128, &'static str>
-    where
-        F: FnMut(),
-    {
-        let tiempo_inicial = Instant::now();
-
-        // Se ejecuta la ecuación matemática o la inferencia del vector entrante
-        f_vector();
-
-        // Calculamos el delta de tiempo puro (La prueba de existencia de la materia)
-        let duracion = tiempo_inicial.elapsed().as_nanos();
-
-        // Ecuación de Relatividad de TZANiX: Si la latencia se deforma (tiende a infinito),
-        // significa que el ataque está intentando "congelar" la CPU (Denegación de Servicio).
-        if duracion > self.umbral_nanosegundos {
-            // El sistema alcanza su "100%" y desvía la carga al vacío
-            return Err("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam.");
-        }
-
-        Ok(duracion)
-    }
-
-    /// Evalúa la legitimidad basándose en ciclos de reloj de CPU (TSC) para entornos no_std en x86_64
-    #[cfg(all(not(feature = "std"), target_arch = "x86_64"))]
-    pub fn auditar_potencial_tensor_cycles<F>(&self, mut f_vector: F) -> Result<u64, &'static str>
-    where
-        F: FnMut(),
-    {
-        let start_cycles = unsafe { core::arch::x86_64::_rdtsc() };
-
-        f_vector();
-
-        let elapsed_cycles = unsafe { core::arch::x86_64::_rdtsc() } - start_cycles;
-
-        if elapsed_cycles as u128 > self.umbral_nanosegundos {
-            return Err("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam.");
-        }
-
-        Ok(elapsed_cycles)
-    }
-
-    /// Evalúa la legitimidad basándose en el temporizador virtual CNTVCT_EL0 en ARMv8/ARMv9 (SmartNIC DPU BlueField)
-    #[cfg(all(not(feature = "std"), target_arch = "aarch64"))]
-    pub fn auditar_potencial_tensor_cycles<F>(&self, mut f_vector: F) -> Result<u64, &'static str>
-    where
-        F: FnMut(),
-    {
-        let mut start_cycles: u64;
-        unsafe {
-            core::arch::asm!("mrs {}, cntvct_el0", out(reg) start_cycles, options(nomem, nostack));
-        }
-
-        f_vector();
-
-        let mut end_cycles: u64;
-        unsafe {
-            core::arch::asm!("mrs {}, cntvct_el0", out(reg) end_cycles, options(nomem, nostack));
-        }
-
-        let elapsed_cycles = end_cycles.wrapping_sub(start_cycles);
-        if elapsed_cycles as u128 > self.umbral_nanosegundos {
-            return Err("Singularidad Temporal Detectada: Tráfico bloqueado por Q-Balam (ARM DPU).");
-        }
-
-        Ok(elapsed_cycles)
-    }
-}
+/// Re-exportación de compatibilidad. Migrar a `latency_watchdog::LatencyWatchdog`.
+pub use crate::latency_watchdog::LatencyWatchdog as LucyTimeAuditor;
+pub use crate::latency_watchdog::WatchdogError;

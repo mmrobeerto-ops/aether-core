@@ -140,7 +140,7 @@ fn test_hybrid_burst_mixed_traffic() {
     let config = DocaPipelineConfig {
         drop_entropy_threshold: 2.10,
         forward_entropy_threshold: 2.25,
-        coherence_tolerance: 0.0,
+        _reserved_coherence: 0.0,
     };
     let pipeline = DocaSmartNicPipeline::with_config(config);
 
@@ -209,7 +209,6 @@ fn test_hot_reload_configuration_in_flight() {
     let parsed_cfg = DocaPipelineConfig::parse_config_str(conf_str);
     assert!((parsed_cfg.drop_entropy_threshold - 0.40).abs() < 1e-6);
     assert!((parsed_cfg.forward_entropy_threshold - 0.90).abs() < 1e-6);
-    assert!((parsed_cfg.coherence_tolerance - 0.05).abs() < 1e-6);
 
     let mut pipeline = DocaSmartNicPipeline::with_config(parsed_cfg);
     assert!((pipeline.get_config().drop_entropy_threshold - 0.40).abs() < 1e-6);
@@ -218,7 +217,7 @@ fn test_hot_reload_configuration_in_flight() {
     let new_cfg = DocaPipelineConfig {
         drop_entropy_threshold: 0.55,
         forward_entropy_threshold: 1.10,
-        coherence_tolerance: 0.0,
+        _reserved_coherence: 0.0,
     };
     pipeline.update_config(new_cfg);
     assert!((pipeline.get_config().drop_entropy_threshold - 0.55).abs() < 1e-6);

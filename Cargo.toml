@@ -2,7 +2,8 @@
 name = "tzanix-aether-core"
 version = "0.1.0"
 edition = "2021"
-authors = ["TZANiX Core Team"]
+authors = ["TZANIX Core Team"]
+description = "Motor de análisis de entropía de distribución de IPs para detección de anomalías de red (Q16.16, no_std, zero-heap)"
 
 [lib]
 name = "tzanix_aether_core"
@@ -32,6 +33,9 @@ pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 [features]
 default = ["std"]
 std = ["dep:memmap2"]
+# Habilita módulos en investigación sin respaldo empírico en producción.
+# cargo build --features experimental
+experimental = []
 # Feature flag para habilitar compilación de bindings PyO3
 python = ["dep:pyo3", "std"]
 

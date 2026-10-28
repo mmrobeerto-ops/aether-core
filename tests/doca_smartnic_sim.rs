@@ -163,5 +163,6 @@ fn test_smartnic_throughput_burst_simulation() {
     );
 
     assert_eq!(forwards + drops, iterations);
-    assert!(nanos_per_pkt < 150.0, "La latencia por paquete debe ser de escala de nanosegundos");
+    let max_ns = if cfg!(debug_assertions) { 5000.0 } else { 150.0 };
+    assert!(nanos_per_pkt < max_ns, "La latencia por paquete debe ser de escala de nanosegundos");
 }
