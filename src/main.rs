@@ -458,7 +458,7 @@ async fn handle_forensic_export(
     let report = serde_json::json!({
         "platform": "TZANiX Æther-Core · Trident Autonomous Cyber Defense",
         "domain": "https://tzanix.com",
-        "compliance_standard": "SOC2 / ISO-27001 / HIPAA / DORA High-Frequency Audit",
+        "compliance_standard": "Informe tecnico de telemetria. No es una certificacion ni una auditoria de cumplimiento.",
         "license_key": st.license_key,
         "silicon_pipeline": {
             "fpga_fixed_point_format": "Q16.16 (Zero-Float)",
@@ -470,7 +470,8 @@ async fn handle_forensic_export(
         },
         "cumulative_metrics": {
             "legitimate_packets_forwarded": st.packets_forwarded,
-            "false_positive_rate_pct": 0.0,
+            "false_positive_rate_pct": null,
+            "false_positive_rate_note": "No medido: esta version no calcula la tasa de falsos positivos.",
             "hardware_cut_through_drops": st.cut_through_drops,
             "gpudirect_fft16_inspections": st.gpu_fft_triggers
         },
