@@ -49,6 +49,10 @@ pub enum WindowState {
 #[derive(Debug, Clone, Copy)]
 pub struct WindowPolicy {
     /// Línea base de entropía aprendida en formato Q16.16.
+    /// Referencia fija: la base adaptativa no puede alejarse de ella
+    pub anchor_q16: u64,
+    /// Deriva maxima permitida respecto a `anchor_q16`
+    pub max_drift_q16: u64,
     pub baseline_q16: u64,
     /// Desviación tolerada en Q16.16 antes de declarar anomalía.
     pub deviation_q16: u64,
@@ -64,6 +68,8 @@ pub struct WindowPolicy {
 impl Default for WindowPolicy {
     fn default() -> Self {
         Self {
+            anchor_q16: 6 * Q16,
+            max_drift_q16: Q16 / 2,
             baseline_q16: 6 * Q16,               // 6.0 bits inicial
             deviation_q16: Q16,                  // ±1.0 bit
             hysteresis_q16: Q16 / 4,             // 0.25 bits de histéresis
@@ -246,7 +252,9 @@ impl WindowEntropy {
 
         // Aprendizaje lento EWMA (alpha = 1/64) SOLO cuando el tráfico es Normal
         if self.state == WindowState::Normal {
-            policy.baseline_q16 = (policy.baseline_q16 * 63 + h) >> 6;
+            let lo = policy.anchor_q16.saturating_sub(policy.max_drift_q16);
+                let hi = policy.anchor_q16.saturating_add(policy.max_drift_q16);
+                policy.baseline_q16 = ((policy.baseline_q16 * 63 + h) >> 6).clamp(lo, hi);
         }
 
         self.last_window_counts = self.counts;

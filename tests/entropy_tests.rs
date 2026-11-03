@@ -119,6 +119,8 @@ fn test_window_entropy_selective_bucket_mitigation_no_self_dos() {
     let pipeline = DocaSmartNicPipeline::with_config(DocaPipelineConfig::default());
     let mut window = WindowEntropy::with_seed(0x1234_5678);
     let mut policy = WindowPolicy {
+        anchor_q16: 7 * Q16,
+        max_drift_q16: Q16 / 2,
         baseline_q16: 7 * Q16,
         deviation_q16: Q16,
         hysteresis_q16: Q16 / 4,
