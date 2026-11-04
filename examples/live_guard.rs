@@ -179,6 +179,13 @@ fn main() {
         if let Some((hdr, _)) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
             if matches!(pipe.evaluate_packet_with_window(&hdr, win, pol, None), DocaFlowAction::DropHardware) {
                 if allowlisted(ip, &allow) || blocked.contains_key(&ip) { return; }
+                // Cota de memoria: evita agotar la RAM si un atacante manda miles de IPs de origen
+                // falsas (spoofing). Poda las IPs de un solo descarte y conserva a los sospechosos serios.
+                const MAX_TRACKED: usize = 100_000;
+                if drops.len() >= MAX_TRACKED && !drops.contains_key(&ip) {
+                    drops.retain(|_, &mut c| c * 2 >= threshold);
+                    if drops.len() >= MAX_TRACKED { drops.clear(); }
+                }
                 let c = drops.entry(ip).or_insert(0);
                 *c += 1;
                 if *c >= threshold {
