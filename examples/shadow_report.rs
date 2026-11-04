@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use tzanix_aether_core::doca_adapter::{DocaFlowAction, DocaSmartNicPipeline};
 use tzanix_aether_core::window_entropy::{WindowEntropy, WindowPolicy, WindowState};
 
-const CAL_WINDOWS: usize = 20;
 
 fn frame(src: u32) -> [u8; 54] {
     let mut p = [0u8; 54];
@@ -114,6 +113,17 @@ fn stats(v: &[f64]) -> (f64, f64, f64) {
     (mn, v.iter().sum::<f64>() / v.len().max(1) as f64, mx)
 }
 
+/// Percentil robusto (q en 0.0..=1.0) sobre una copia ordenada.
+fn percentile(v: &[f64], q: f64) -> f64 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    let mut s = v.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let idx = (((s.len() - 1) as f64) * q).round() as usize;
+    s[idx.min(s.len() - 1)]
+}
+
 fn main() {
     let path = std::env::args().nth(1).expect("uso: shadow_report <archivo>");
     let hash = std::env::var("HASH").is_ok();
@@ -130,24 +140,35 @@ fn main() {
         println!("Sin direcciones IPv4 validas");
         return;
     }
-    let mut pol = WindowPolicy::default();
-    let min = (pol.min_window_packets as usize).max(2);
-    let cal_n = (CAL_WINDOWS * min).min(ips.len());
+    // --- Calibracion robusta v2: observa TODAS las ventanas (no solo el inicio),
+    //     ancla a un percentil alto (trafico normal = diverso) y banda adaptativa (MAD). ---
+    let min = (WindowPolicy::default().min_window_packets as usize).max(2);
     let mut tmp = WindowPolicy::default();
-    let cal = run(&ips[..cal_n], &mut tmp);
-    if cal.ent.is_empty() {
+    let scan = run(&ips, &mut tmp);
+    if scan.ent.is_empty() {
         println!("Muy pocos paquetes para calibrar (hacen falta {})", min);
         return;
     }
-    let (cmin, cmean, cmax) = stats(&cal.ent);
-    pol.baseline_q16 = (cmean * 65536.0) as u64;
-    pol.anchor_q16 = pol.baseline_q16;
+    // Normal = ventanas de mayor entropia (trafico diverso); el ataque concentrado cae por debajo.
+    let anchor = percentile(&scan.ent, 0.70);
+    let med = percentile(&scan.ent, 0.50);
+    let devs: Vec<f64> = scan.ent.iter().map(|e| (e - med).abs()).collect();
+    let mad = percentile(&devs, 0.50);
+    // Banda adaptativa: ancha cuando el trafico varia mucho, acotada a limites sensatos.
+    let deviation = (2.0 * mad).clamp(0.75, 2.5);
+
+    let mut pol = WindowPolicy::default();
+    pol.baseline_q16 = (anchor * 65536.0) as u64;
+    pol.anchor_q16 = (anchor * 65536.0) as u64;
+    pol.deviation_q16 = (deviation * 65536.0) as u64;
+    pol.max_drift_q16 = (deviation * 65536.0) as u64;
     let r = run(&ips, &mut pol);
+
     let p = |a: u64| if r.n == 0 { 0.0 } else { a as f64 * 100.0 / r.n as f64 };
     let (mn, me, mx) = stats(&r.ent);
     println!("== Informe en modo sombra (no se bloqueo nada) ==");
     println!("Paquetes analizados: {} | lineas sin IPv4: {}", r.n, skipped);
-    println!("Ancla calibrada: {:.2} bits con {} ventanas (rango {:.2}-{:.2})", cmean, cal.ent.len(), cmin, cmax);
+    println!("Calibracion robusta: ancla {:.2} bits (p70) | banda +/-{:.2} bits (adaptativa, MAD {:.2}) | {} ventanas", anchor, deviation, mad, scan.ent.len());
     println!("Ventanas: Normal {} | Suspect {} | Attack {}", r.wn, r.ws, r.wa);
     println!("Entropia por ventana: min {:.2} media {:.2} max {:.2}", mn, me, mx);
     println!("Habria descartado: {} ({:.2}%) | inspeccion: {} ({:.2}%) | reenviado: {}", r.drop, p(r.drop), r.mirror, p(r.mirror), r.fwd);
@@ -157,11 +178,7 @@ fn main() {
     for (ip, c) in top.iter().take(10) {
         println!("  {} -> {}", mask(**ip, hash), c);
     }
-    if cal.ent.len() < 5 {
-        println!("AVISO: calibracion debil (menos de 5 ventanas). Usa un archivo mas largo.");
+    if scan.ent.len() < 5 {
+        println!("AVISO: pocas ventanas (<5); usa un archivo mas largo para mejor calibracion.");
     }
-    if cmax - cmin > 1.0 {
-        println!("AVISO: las ventanas de calibracion varian mucho; el inicio puede no ser trafico normal.");
-    }
-    println!("Nota: la calibracion supone que el inicio del archivo es trafico normal.");
 }
