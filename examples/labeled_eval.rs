@@ -110,18 +110,28 @@ fn col_index(header: &str, needle: &str, env: &str) -> Option<usize> {
 }
 
 fn main() {
+    use std::io::BufRead;
     let path = std::env::args().nth(1).expect("uso: labeled_eval <archivo.csv>");
-    let text = std::fs::read_to_string(&path).expect("no se pudo leer el archivo");
-    let mut lines = text.lines();
-    let header = lines.next().unwrap_or("");
-    let src_col = col_index(header, "source ip", "SRC_COL")
+    let file = std::fs::File::open(&path).expect("no se pudo abrir el archivo");
+    let mut reader = std::io::BufReader::new(file);
+    // Lee la cabecera en streaming (no carga el archivo entero en memoria).
+    let mut header = String::new();
+    reader.read_line(&mut header).expect("no se pudo leer la cabecera");
+    let src_col = col_index(&header, "source ip", "SRC_COL")
         .expect("no encuentro columna 'Source IP' (usa SRC_COL=<n>)");
-    let label_col = col_index(header, "label", "LABEL_COL")
+    let label_col = col_index(&header, "label", "LABEL_COL")
         .expect("no encuentro columna 'Label' (usa LABEL_COL=<n>)");
 
     let mut ips: Vec<(u32, bool)> = Vec::new();
     let (mut n_attack, mut n_benign, mut skipped) = (0u64, 0u64, 0u64);
-    for line in lines {
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
         let cols: Vec<&str> = line.split(',').collect();
         if cols.len() <= src_col.max(label_col) {
             skipped += 1;
