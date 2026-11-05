@@ -169,7 +169,7 @@ fn main() {
         for ip in expired {
             blocked.remove(&ip);
             drops.remove(&ip);
-            if block_mode { iptables(&["-D", "INPUT", "-s", &ip_str(ip), "-j", "DROP"]); }
+            if block_mode { iptables(&["-D", "INPUT", "-s", &ip_str(ip), "-m", "comment", "--comment", "tzanix-guard", "-j", "DROP"]); }
             println!("[LIBERADO] {} (caduco el bloqueo tras {} min)", ip_str(ip), ttl_secs / 60);
         }
 
@@ -192,7 +192,7 @@ fn main() {
                     let exp = now() + ttl_secs;
                     blocked.insert(ip, exp);
                     if block_mode {
-                        let ok = iptables(&["-I", "INPUT", "-s", &ip_str(ip), "-j", "DROP"]);
+                        let ok = iptables(&["-I", "INPUT", "-s", &ip_str(ip), "-m", "comment", "--comment", "tzanix-guard", "-j", "DROP"]);
                         println!("[BLOQUEADO] {} ({} descartes) {}", ip_str(ip), c, if ok { "-> iptables OK" } else { "-> FALLO iptables (¿sin permisos?)" });
                     } else {
                         println!("[OBSERVACION] bloquearia {} ({} descartes) — atacante concentrado", ip_str(ip), c);
