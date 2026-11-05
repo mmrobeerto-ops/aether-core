@@ -79,7 +79,7 @@ fn run(ips: &[u32], pol: &mut WindowPolicy) -> Rep {
     let mut r = Rep::default();
     for (i, &ip) in ips.iter().enumerate() {
         let raw = frame(ip);
-        if let Some((hdr, _)) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
+        if let Some(hdr) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
             r.n += 1;
             match pipe.evaluate_packet_with_window(&hdr, &mut win, pol, None) {
                 DocaFlowAction::DropHardware => {
