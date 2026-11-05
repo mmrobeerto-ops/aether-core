@@ -51,7 +51,7 @@ cat > /etc/tzanix/guard.env <<EOF
 MODE=observe          # observe = solo mira (seguro) | block = bloquea de verdad
 THRESHOLD=100         # descartes por IP antes de accionar
 TTL_MIN=60            # minutos que dura cada bloqueo (se retira solo)
-CAL=40000             # paquetes de calibracion al arrancar
+CAL=40000             # tope de paquetes de calibracion (se auto-ajusta a la baja si el log es corto)
 ALLOW=$MI_IP          # IPs/redes en lista blanca (coma-separadas). TU IP ya esta aqui.
 LOG=$LOG
 EOF
@@ -74,7 +74,16 @@ cat > /usr/local/bin/tzanix-guard-run <<'EOF'
 set -a; . /etc/tzanix/guard.env; set +a
 # Al arrancar, limpia reglas viejas para no acumular DROPs tras un reinicio.
 [ "$MODE" = "block" ] && /usr/local/bin/tzanix-limpiar-reglas
-exec tail -n0 -F "$LOG" | awk '{print $1}' | /usr/local/bin/tzanix-guard
+# Auto-ajuste de calibracion: si el historial del log es mas corto que CAL,
+# calibra con lo que haya (asi un servidor tranquilo no se queda esperando
+# miles de peticiones nuevas para empezar a vigilar).
+HIST=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+if [ "$HIST" -lt "$CAL" ]; then
+  if [ "$HIST" -gt 60 ]; then CAL=$((HIST - 10)); else CAL=50; fi
+fi
+export CAL
+# Replay del historial para calibrar de inmediato, luego vigila en vivo.
+{ cat "$LOG"; tail -n0 -F "$LOG"; } | awk '{print $1}' | /usr/local/bin/tzanix-guard
 EOF
 chmod +x /usr/local/bin/tzanix-guard-run
 
