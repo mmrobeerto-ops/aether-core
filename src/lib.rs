@@ -20,8 +20,6 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 pub mod storage;
 /// Monitor de latencia de ejecución interna (Latency Guard).
 pub mod latency_watchdog;
-/// Módulo de compatibilidad deprecado.
-pub mod lucy_core;
 /// Entropía por ventana de distribución de IPs en Q16.16 — señal primaria de red.
 pub mod window_entropy;
 pub mod optimizer;
