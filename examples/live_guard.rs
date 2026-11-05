@@ -99,6 +99,10 @@ fn main() {
     let threshold: u64 = env("THRESHOLD", "100").parse().unwrap_or(100);
     let ttl_secs: u64 = env("TTL_MIN", "60").parse().unwrap_or(60) * 60;
     let cal_n: usize = env("CAL", "40000").parse().unwrap_or(40000);
+    // Tamano de ventana: por defecto 2048 (8*BUCKETS, el minimo estadistico solido).
+    // Se puede bajar con WINDOW=... SOLO para pruebas en servidores de poco trafico;
+    // por debajo de 2048 la entropia es mas ruidosa y suben los falsos positivos.
+    let window_min: u64 = env("WINDOW", "2048").parse().unwrap_or(2048).max(2);
     let allow = parse_allow(&env("ALLOW", ""));
 
     eprintln!("== TZANIX Live Guard ==");
@@ -114,6 +118,10 @@ fn main() {
     let pipe = DocaSmartNicPipeline::new(0.35, 0.0);
     let mut win = WindowEntropy::default();
     let mut pol = WindowPolicy::default();
+    pol.min_window_packets = window_min;
+    if window_min < 2048 {
+        eprintln!("AVISO: ventana reducida a {} (<2048). Solo para pruebas; la deteccion es mas ruidosa.", window_min);
+    }
 
     // --- Fase 1: calibracion ---
     let stdin = std::io::stdin();
@@ -124,6 +132,7 @@ fn main() {
     {
         let mut cw = WindowEntropy::default();
         let mut cp = WindowPolicy::default();
+        cp.min_window_packets = window_min;
         let mut i = 0usize;
         while i < cal_n {
             let line = match lines.next() { Some(Ok(l)) => l, Some(Err(_)) => continue, None => break };
@@ -169,7 +178,7 @@ fn main() {
         for ip in expired {
             blocked.remove(&ip);
             drops.remove(&ip);
-            if block_mode { iptables(&["-D", "INPUT", "-s", &ip_str(ip), "-j", "DROP"]); }
+            if block_mode { iptables(&["-D", "INPUT", "-s", &ip_str(ip), "-m", "comment", "--comment", "tzanix-guard", "-j", "DROP"]); }
             println!("[LIBERADO] {} (caduco el bloqueo tras {} min)", ip_str(ip), ttl_secs / 60);
         }
 
@@ -192,7 +201,7 @@ fn main() {
                     let exp = now() + ttl_secs;
                     blocked.insert(ip, exp);
                     if block_mode {
-                        let ok = iptables(&["-I", "INPUT", "-s", &ip_str(ip), "-j", "DROP"]);
+                        let ok = iptables(&["-I", "INPUT", "-s", &ip_str(ip), "-m", "comment", "--comment", "tzanix-guard", "-j", "DROP"]);
                         println!("[BLOQUEADO] {} ({} descartes) {}", ip_str(ip), c, if ok { "-> iptables OK" } else { "-> FALLO iptables (¿sin permisos?)" });
                     } else {
                         println!("[OBSERVACION] bloquearia {} ({} descartes) — atacante concentrado", ip_str(ip), c);
