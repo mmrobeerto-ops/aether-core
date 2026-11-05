@@ -4,14 +4,9 @@
 //! clasificación de paquetes en línea combinando `WindowEntropy` (Q16.16 por ventana y
 //! límite de cuota por bucket) con telemetría lock-free.
 
-use crate::{AetherSignalEngine, DenseSignalSnapshot, SIGNAL_CHANNELS};
 use crate::storage::{SpscTelemetryBuffer, UniversalEvent};
 use crate::window_entropy::{WindowEntropy, WindowPolicy, WindowState};
 
-/// Índices semánticos dentro de `DenseSignalSnapshot` (evita números mágicos).
-pub const CH_ALPHA_SRC_IP_LO: usize = 1;
-pub const CH_ALPHA_TOTAL_LEN: usize = 6;
-pub const CH_BETA_FRAME_LEN: usize = 4;
 pub const STANDARD_MTU_BYTES: f32 = 1500.0;
 
 /// Acción de control emitida para el pipeline de hardware DOCA Flow
@@ -203,7 +198,7 @@ impl DocaSmartNicPipeline {
     #[inline(always)]
     pub fn parse_raw_dma_packet(
         packet_raw: &[u8],
-    ) -> Option<(PacketHeaderView, DenseSignalSnapshot)> {
+    ) -> Option<PacketHeaderView> {
         if packet_raw.len() < 34 {
             return None;
         }
@@ -284,74 +279,7 @@ impl DocaSmartNicPipeline {
             _reserved: [0; 12],
         };
 
-        let mut alpha = [0u32; SIGNAL_CHANNELS];
-        let mut beta = [0u32; SIGNAL_CHANNELS];
-
-        alpha[0] = (src_ip >> 16) & 0xFFFF;
-        alpha[1] = src_ip & 0xFFFF;
-        alpha[2] = (dst_ip >> 16) & 0xFFFF;
-        alpha[3] = dst_ip & 0xFFFF;
-        alpha[4] = src_port as u32;
-        alpha[5] = dst_port as u32;
-        alpha[6] = total_len as u32;
-        alpha[7] = (protocol as u32) << 8 | (tcp_flags as u32);
-
-        beta[0] = ttl as u32;
-        beta[1] = tos as u32;
-        beta[2] = ((src_port ^ dst_port) as u32) & 0xFFFF;
-        beta[3] = (src_ip ^ dst_ip) & 0xFFFF;
-        beta[4] = packet_raw.len() as u32;
-        beta[5] = (tcp_flags as u32) << 4;
-        beta[6] = (total_len as u32).saturating_sub(ihl as u32);
-        beta[7] = ((src_port as u32) + (dst_port as u32)) & 0xFFFF;
-
-        let snapshot = DenseSignalSnapshot {
-            channel_alpha: alpha,
-            channel_beta: beta,
-        };
-
-        Some((header, snapshot))
-    }
-
-    /// Evalúa un `DenseSignalSnapshot` sintético o pre-proyectado (Modo co-simulación / Telemetría).
-    /// Para tráfico de red en producción, usar `evaluate_packet_with_window()` que opera sobre
-    /// la distribución de orígenes por ventana y aplica rate-limiting selectivo por bucket.
-    #[inline(always)]
-    pub fn evaluate_packet(
-        &self,
-        snapshot: &DenseSignalSnapshot,
-        telemetry: Option<&mut SpscTelemetryBuffer>,
-    ) -> DocaFlowAction {
-        let entropy = AetherSignalEngine::compute_signal_entropy(snapshot);
-
-        let action = if entropy < self.config.drop_entropy_threshold {
-            DocaFlowAction::DropHardware
-        } else if entropy < self.config.forward_entropy_threshold {
-            DocaFlowAction::MirrorInspection
-        } else {
-            DocaFlowAction::ForwardHost
-        };
-
-        if let Some(tb) = telemetry {
-            let event = UniversalEvent {
-                timestamp_ns: 0,
-                entity_id: snapshot.channel_alpha[CH_ALPHA_SRC_IP_LO],
-                signal_value: snapshot.channel_alpha[CH_ALPHA_TOTAL_LEN],
-                metric_entropy: entropy as f32,
-                metric_volatility: (snapshot.channel_beta[CH_BETA_FRAME_LEN] as f32)
-                    / STANDARD_MTU_BYTES,
-                risk_multiplier: if action == DocaFlowAction::DropHardware {
-                    1.0
-                } else {
-                    0.0
-                },
-                action_type: action as u8,
-                _padding: [0; 3],
-            };
-            let _ = tb.try_push(event);
-        }
-
-        action
+        Some(header)
     }
 
     /// Camino crítico O(1) por paquete basado en `WindowEntropy` y mitigación selectiva por bucket:

@@ -130,7 +130,7 @@ fn main() {
             if let Some(ip) = parse_ip(&line) {
                 cal_ips.push(ip);
                 let raw = frame(ip);
-                if let Some((hdr, _)) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
+                if let Some(hdr) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
                     let _ = pipe.evaluate_packet_with_window(&hdr, &mut cw, &mut cp, None);
                 }
                 if (i + 1) % min == min - 1 { ent.push(cw.entropy_q16() as f64 / 65536.0); }
@@ -176,7 +176,7 @@ fn main() {
         let ip = match parse_ip(&line) { Some(x) => x, None => return };
         *processed += 1;
         let raw = frame(ip);
-        if let Some((hdr, _)) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
+        if let Some(hdr) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
             if matches!(pipe.evaluate_packet_with_window(&hdr, win, pol, None), DocaFlowAction::DropHardware) {
                 if allowlisted(ip, &allow) || blocked.contains_key(&ip) { return; }
                 // Cota de memoria: evita agotar la RAM si un atacante manda miles de IPs de origen

@@ -66,7 +66,7 @@ fn run(concentrate: bool, max_drift: Option<u64>) -> (char, f64) {
             (zipf(&mut r, 500.0), false)
         };
         let raw = frame(ip);
-        if let Some((hdr, _)) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
+        if let Some(hdr) = DocaSmartNicPipeline::parse_raw_dma_packet(&raw) {
             let act = pipe.evaluate_packet_with_window(&hdr, &mut win, &mut pol, None);
             if p >= 0.75 && is_bad {
                 bad += 1;

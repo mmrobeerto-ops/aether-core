@@ -21,32 +21,10 @@ panic = "abort"
 
 [dependencies]
 memmap2 = { version = "0.9", optional = true }
-rand = { version = "0.8", optional = true }
-axum = { version = "0.7", optional = true }
-tokio = { version = "1.0", features = ["full"], optional = true }
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
-
-# Dependencia de Python opcional (extension-module separado para no romper cargo test)
-pyo3 = { version = "0.22", optional = true }
 
 [features]
-default = ["std", "server"]
-# std puro: solo activa std y memmap2 para la librería
+default = ["std"]
+# std puro: activa std y memmap2 para la librería
 std = ["dep:memmap2"]
-# server: activa el binario HTTP / simulación con tokio, axum, serde y rand
-server = ["std", "dep:rand", "dep:axum", "dep:tokio", "dep:serde", "dep:serde_json"]
 # Habilita el panic_handler bare-metal cuando no se enlaza con otro binario que defina el suyo
 panic-handler = []
-# Habilita módulos en investigación sin respaldo empírico en producción
-experimental = []
-# Feature flag para compilar bindings PyO3 (maturin activa extension-module)
-python = ["dep:pyo3", "std"]
-extension-module = ["python", "pyo3/extension-module"]
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-
-[[bench]]
-name = "entropy_benchmark"
-harness = false
