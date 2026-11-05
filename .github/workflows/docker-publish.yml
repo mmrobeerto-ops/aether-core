@@ -46,7 +46,7 @@ jobs:
           chmod +x ./tzanix-aether-core-linux-x86_64
 
       - name: Publish Static Binary to GitHub Releases (v1.0.0-silicon)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v1.0.0-silicon
           name: "TZANIX Aether-Core Static Linux Binary (musl Zero-Deps)"
