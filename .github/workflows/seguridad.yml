@@ -13,7 +13,7 @@ jobs:
     name: Auditoría de dependencias (RustSec)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
@@ -23,7 +23,7 @@ jobs:
     name: Búsqueda de secretos filtrados
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: gitleaks
@@ -35,6 +35,6 @@ jobs:
     name: Clippy (calidad y errores comunes)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup component add clippy
       - run: cargo clippy --features std -- -D warnings
