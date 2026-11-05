@@ -108,6 +108,18 @@ StandardError=append:/var/log/tzanix-guard.log
 WantedBy=multi-user.target
 EOF
 
+# --- 5b. Rotacion de logs (evita llenar el disco del cliente con el tiempo) --
+cat > /etc/logrotate.d/tzanix-guard <<'EOF'
+/var/log/tzanix-guard.log {
+  weekly
+  rotate 8
+  compress
+  missingok
+  notifempty
+  copytruncate
+}
+EOF
+
 # --- 6. Comando para activar bloqueo real (etapa 2) ------------------------
 cat > /usr/local/bin/tzanix-activar-bloqueo <<'EOF'
 #!/usr/bin/env bash
