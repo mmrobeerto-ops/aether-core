@@ -83,9 +83,10 @@ if [ "$HIST" -lt "$CAL" ]; then
 fi
 export CAL
 # Replay del historial para calibrar de inmediato, luego vigila en vivo.
-# fflush() es clave: sin el, awk retiene las lineas en su bufer y el binario
-# nunca recibe el historial (tail -F mantiene la tuberia abierta para siempre).
-{ cat "$LOG"; tail -n0 -F "$LOG"; } | awk '{print $1; fflush()}' | /usr/local/bin/tzanix-guard
+# Sin awk a proposito: awk (mawk) bloquea su entrada en bufer cuando la lee de
+# una tuberia, y como tail -F la mantiene abierta, las lineas nunca llegaban al
+# binario. El binario ya extrae la IP de cada linea cruda por si mismo.
+{ cat "$LOG"; tail -n0 -F "$LOG"; } | /usr/local/bin/tzanix-guard
 EOF
 chmod +x /usr/local/bin/tzanix-guard-run
 
