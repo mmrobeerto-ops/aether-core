@@ -245,7 +245,6 @@ async fn run_server() {
         .route("/api/v1/telemetry", get(handle_live_telemetry))
         .route("/api/v1/simulate-burst", post(handle_simulate_burst))
         .route("/api/v1/forensic-report", get(handle_forensic_export))
-        .route("/api/v1/generate-poc-key", post(handle_generate_poc_key))
         .route("/api/v1/query", post(handle_query))
         .route("/api/v1/heavy-calc", get(handle_heavy_calc).post(handle_heavy_calc))
         .with_state(state);
@@ -488,43 +487,6 @@ async fn handle_forensic_export(
         )
         .body(axum::body::Body::from(body_pretty))
         .unwrap()
-}
-
-#[cfg(feature = "std")]
-#[derive(serde::Deserialize)]
-struct PocKeyRequest {
-    corporate_email: String,
-}
-
-#[cfg(feature = "std")]
-#[derive(serde::Serialize)]
-struct PocKeyResponse {
-    corporate_email: String,
-    license_key: String,
-    valid_days: u32,
-    docker_command: String,
-}
-
-#[cfg(feature = "std")]
-async fn handle_generate_poc_key(
-    axum::Json(req): axum::Json<PocKeyRequest>,
-) -> axum::Json<PocKeyResponse> {
-    let mut hash: u32 = 0x811C_9DC5;
-    for b in req.corporate_email.bytes() {
-        hash ^= b as u32;
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    let key = format!("tzanix_live_sec_{:08x}_poc14d", hash);
-    let cmd = format!(
-        "export TZANIX_LICENSE_KEY=\"{}\" && docker compose up -d",
-        key
-    );
-    axum::Json(PocKeyResponse {
-        corporate_email: req.corporate_email,
-        license_key: key,
-        valid_days: 14,
-        docker_command: cmd,
-    })
 }
 
 #[cfg(feature = "std")]
