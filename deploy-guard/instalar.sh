@@ -13,9 +13,13 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # --- 1. Detecta tu IP de SSH para la lista blanca (anti-candado) ------------
-MI_IP="${SSH_CLIENT%% *}"
+# Nota: `sudo` suele limpiar SSH_CLIENT/SSH_CONNECTION, por eso se leen con
+# valor por defecto vacio (evita "unbound variable" con `set -u`). Si no se
+# detecta, se pide la IP a mano. Para auto-deteccion corre: sudo -E bash instalar.sh
+MI_IP="${SSH_CLIENT:-${SSH_CONNECTION:-}}"
+MI_IP="${MI_IP%% *}"
 if [ -z "${MI_IP:-}" ]; then
-  echo "No pude detectar tu IP de SSH automaticamente."
+  echo "No pude detectar tu IP de SSH automaticamente (normal si usaste 'sudo' sin -E)."
   read -rp "Escribe TU IP publica (la que usas para entrar al servidor): " MI_IP
 fi
 echo ">> Tu IP ($MI_IP) ira a la lista blanca: el agente NUNCA la bloqueara."
