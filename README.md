@@ -1,8 +1,14 @@
 # TZANIX Æther-Core
 
+**Software libre y de código abierto** · Licencia **AGPL-3.0** · Hecho en 🇲🇽
+
 Motor de detección de anomalías de red por **entropía de distribución de IPs**,
 escrito en Rust (`no_std`, sin asignación dinámica de memoria, aritmética de
 punto fijo `Q16.16`).
+
+> Úsalo, estúdialo, modifícalo y compártelo libremente. Si lo ofreces como
+> servicio en red, la AGPL pide que publiques tus cambios (así se mantiene libre
+> para todos). Las contribuciones y reportes son bienvenidos.
 
 > **Estado:** etapa temprana. El motor está **validado sobre tráfico real**
 > (ver más abajo), pero aún no tiene clientes en producción. No es un antivirus
